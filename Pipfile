@@ -14,6 +14,7 @@ Keras = "*"
 black = "*"
 pytest = "*"
 tensorflow = "*"
+tqdm = "*"
 
 [requires]
 python_version = "3.7"

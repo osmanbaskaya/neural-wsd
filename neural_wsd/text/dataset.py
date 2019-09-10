@@ -6,10 +6,9 @@ from sklearn.preprocessing import LabelEncoder
 
 
 class WikiWordSenseDisambiguationDataset(torch.utils.data.Dataset):
-    def __init__(self, directory, transforms):
+    def __init__(self, directory):
         self.directory = directory
         self.__label_encoder = LabelEncoder()
-        self.transforms = transforms
         self.__data = WikiWordSenseDisambiguationDataset.read_data_to_dataframe(directory)
         self.__fit_to_labels()
 
@@ -67,8 +66,6 @@ class WikiWordSenseDisambiguationDataset(torch.utils.data.Dataset):
             "id": row["id"],
         }
 
-        for func in self.transforms:
-            sample = func(sample)
         return sample
 
     @property

@@ -125,12 +125,11 @@ class BasicTextProcessingOp(StatelessOperator):
         self.lowercase = lowercase
 
     def _transform(self, data):
-        transformed = data["default"]
+        transformed = data
         if self.lowercase:
             transformed = [sample.lower() for sample in transformed]
 
-        data["default"] = transformed
-        return data
+        return transformed
 
 
 class PipelineRunner(Operator):
@@ -160,16 +159,12 @@ class PipelineRunner(Operator):
                 op.set_batch_size(self.batch_size)
 
         transformed = deepcopy(data)
-        if not isinstance(transformed, dict):
-            transformed = {"default": transformed}
         for op in self.pipeline:
-            transformed = op.fit(transformed)
+            transformed = op.train(transformed)
         return transformed
 
     def _transform(self, data):
         transformed = deepcopy(data)
-        if not isinstance(transformed, dict):
-            transformed = {"default": transformed}
         for op in self.pipeline:
             transformed = op.transform(transformed)
         return transformed
@@ -179,21 +174,24 @@ class PipelineRunner(Operator):
 
 
 class PaddingOp(StatelessOperator):
-    def __init__(self, max_length=512, **kwargs):
+    def __init__(self, max_length=512, padding="post", truncating="post", value=0, **kwargs):
         super().__init__(**kwargs)
+        self.padding = padding
+        self.truncating = truncating
+        self.value = value
         self.max_length = max_length
 
     def _transform(self, data):
         # TODO check pad_seq params.
 
-        transformed = data["default"]
         transformed = pad_sequences(
-            transformed, self.max_length, padding="post", truncating="post", value=0
+            data,
+            self.max_length,
+            padding=self.padding,
+            truncating=self.truncating,
+            value=self.value,
         )
 
         mask = torch.tensor(transformed != 0, dtype=torch.int64, requires_grad=False)
 
-        data["default"] = transformed
-        data["mask"] = mask
-
-        return data
+        return transformed, mask
