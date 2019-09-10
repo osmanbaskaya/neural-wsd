@@ -1,7 +1,8 @@
 import multiprocessing
 from copy import deepcopy
-from itertools import cycle
 
+import torch
+from itertools import cycle
 from keras.preprocessing.sequence import pad_sequences
 from pytorch_transformers import AutoTokenizer
 
@@ -11,7 +12,7 @@ class Operator:
     inputs = []
     outputs = []
 
-    def __init__(self, op_name, next_op=None):
+    def __init__(self, op_name="", next_op=None):
         self.op_name = op_name
         self.next_op = next_op
 
@@ -87,8 +88,8 @@ class Operator:
 
 
 class StatelessOperator(Operator):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._is_fitted = True
 
     def _fit(self, data):
@@ -110,17 +111,31 @@ class PreTrainedModelTokenizeOp(StatelessOperator):
         )
 
     def _transform(self, data):
-        return [self._tokenizer.encode(sample, add_special_tokens=True) for sample in data]
+        data["default"] = [
+            self._tokenizer.encode(sample, add_special_tokens=True) for sample in data["default"]
+        ]
+
+        return data
 
 
-class LowerCaseOp(StatelessOperator):
+class BasicTextProcessingOp(StatelessOperator):
+    # TODO: Add more text preprocessing operations.
+    def __init__(self, lowercase=True, **kwargs):
+        super().__init__(**kwargs)
+        self.lowercase = lowercase
+
     def _transform(self, data):
-        return [sample.lower() for sample in data]
+        transformed = data["default"]
+        if self.lowercase:
+            transformed = [sample.lower() for sample in transformed]
+
+        data["default"] = transformed
+        return data
 
 
 class PipelineRunner(Operator):
-    def __init__(self, *args, num_process=1, batch_size=100, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, num_process=1, batch_size=100, **kwargs):
+        super().__init__(**kwargs)
         self.num_process = num_process
         if self.num_process > 1:
             self.set_pool(multiprocessing.Pool())
@@ -145,14 +160,16 @@ class PipelineRunner(Operator):
                 op.set_batch_size(self.batch_size)
 
         transformed = deepcopy(data)
+        if not isinstance(transformed, dict):
+            transformed = {"default": transformed}
         for op in self.pipeline:
             transformed = op.fit(transformed)
         return transformed
 
     def _transform(self, data):
         transformed = deepcopy(data)
-        # if not isinstance(copied_data, dict):
-        #     return {"default": copied_data}
+        if not isinstance(transformed, dict):
+            transformed = {"default": transformed}
         for op in self.pipeline:
             transformed = op.transform(transformed)
         return transformed
@@ -162,18 +179,21 @@ class PipelineRunner(Operator):
 
 
 class PaddingOp(StatelessOperator):
-    def __init__(self, *args, max_length=512, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, max_length=512, **kwargs):
+        super().__init__(**kwargs)
         self.max_length = max_length
 
     def _transform(self, data):
         # TODO check pad_seq params.
+
+        transformed = data["default"]
         transformed = pad_sequences(
-            data, self.max_length, padding="post", truncating="post", value=0
+            transformed, self.max_length, padding="post", truncating="post", value=0
         )
 
-        # mask = torch.zeros(512, requires_grad=False, dtype=torch.int64)
-        # mask[: copied["length"]] = 1  # mark only the sentence tokens, not padding tokens.
-        # copied["attention_mask"] = mask
+        mask = torch.tensor(transformed != 0, dtype=torch.int64, requires_grad=False)
 
-        return transformed
+        data["default"] = transformed
+        data["mask"] = mask
+
+        return data

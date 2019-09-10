@@ -1,13 +1,18 @@
-from neural_wsd.text.ops import PreTrainedModelTokenizeOp, LowerCaseOp, PipelineRunner, PaddingOp
+from neural_wsd.text.ops import (
+    PreTrainedModelTokenizeOp,
+    BasicTextProcessingOp,
+    PipelineRunner,
+    PaddingOp,
+)
 from multiprocessing import Pool
 
-runner = PipelineRunner("initialization-operator", num_process=1, batch_size=5)
+runner = PipelineRunner(op_name="initialization-operator", num_process=1, batch_size=5)
 
-lowercase_op = LowerCaseOp("lowercase")
+lowercase_op = BasicTextProcessingOp(op_name="text-prepocess", lowercase=True)
 tokenizer_op = PreTrainedModelTokenizeOp(
     op_name="bert-tokenizer", base_model="bert-base-uncased", max_length=512
 )
-padding_op = PaddingOp("padding-op")
+padding_op = PaddingOp(op_name="padding-op")
 
 # lowercase_op = LowerCaseOp("lowercase", next_op=tokenizer_op)
 
@@ -20,5 +25,5 @@ print("\n", data)
 
 
 def test_lowercase_op():
-    op = LowerCaseOp("lowercase", next_op=tokenizer_op)
+    op = BasicTextProcessingOp("text-prepocess", lowercase=True)
     assert op.transform(["Lowercase this data"]) == ["lowercase this data"]
