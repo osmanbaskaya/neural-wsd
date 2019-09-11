@@ -12,4 +12,3 @@ def test_padding_op_correct():
     output, _ = t.transform([[1, 2, 3], [1, 0, 5, 4]])
     assert truth == output.tolist()
     assert output.shape == (2, 5)
-
