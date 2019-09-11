@@ -7,6 +7,9 @@ from keras.preprocessing.sequence import pad_sequences
 from pytorch_transformers import AutoTokenizer
 
 
+# ---------------- Feature Transformers -------------------
+
+
 class BaseTransformer:
     inputs = []
     outputs = []
@@ -31,16 +34,18 @@ class BaseTransformer:
     def is_fitted(self):
         return self._is_fitted
 
-    def fit(self, data, **context):
+    def fit(self, data, context):
         self._validate_requirements(data)
 
         if not self.is_fitted:
-            self._fit(data)
+            self._fit(data, context)
             self._is_fitted = True
 
-        return self.transform(data, **context)
+        return self
 
-    def transform(self, data, **context):
+    def transform(self, data, context=None):
+        if context is None:
+            context = {}
         self._validate_requirements(data)
         if not self.is_fitted:
             raise ValueError("Need to fit this first.")
@@ -49,17 +54,17 @@ class BaseTransformer:
             it = cycle(BaseTransformer._batch_iter(data, self.batch_size))
             transformed = self.pool.map(self._transform, it)
         else:
-            transformed = self._transform(data, **context)
+            transformed = self._transform(data, context)
 
         return transformed
 
-    def fit_transform(self, data, **context):
-        return self.fit(data, **context)
+    def fit_transform(self, data, context=None):
+        return self.fit(data, context).transform(data, context)
 
-    def _fit(self, data, **context):
+    def _fit(self, data, context):
         raise NotImplementedError()
 
-    def _transform(self, data, **context):
+    def _transform(self, data, context):
         raise NotImplementedError()
 
     def _validate_requirements(self, data):
@@ -91,10 +96,10 @@ class StatelessBaseTransformer(BaseTransformer):
         super().__init__(**kwargs)
         self._is_fitted = True
 
-    def _fit(self, data, **context):
-        pass
+    def _fit(self, data, context):
+        return self
 
-    def _transform(self, data, **context):
+    def _transform(self, data, context):
         raise NotImplementedError()
 
 
@@ -116,15 +121,15 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
             base_model, do_lower_case=do_lower_case, do_basic_tokenize=do_basic_tokenize
         )
 
-    def _transform(self, data, **context):
-        data["default"] = [
+    def _transform(self, data, context):
+        data = [
             self._tokenizer.encode(
                 sample[: self.max_length - self.num_of_special_tokens], add_special_tokens=True
             )
-            for sample in data["default"]
+            for sample in data
         ]
 
-        return (data,)
+        return data, context
 
 
 class BasicTextTransformer(StatelessBaseTransformer):
@@ -133,7 +138,7 @@ class BasicTextTransformer(StatelessBaseTransformer):
         super().__init__(**kwargs)
         self.lowercase = lowercase
 
-    def _transform(self, data, **context):
+    def _transform(self, data, context):
         transformed = data
         if self.lowercase:
             transformed = [sample.lower() for sample in transformed]
@@ -159,7 +164,7 @@ class PipelineRunner(BaseTransformer):
             t = t.next_transformer
         self.pipeline = pipeline
 
-    def _fit(self, data, **context):
+    def _fit(self, data, context):
         self.create_pipeline()
         if self.num_process > 1:
             for transformer in self.pipeline:
@@ -167,16 +172,15 @@ class PipelineRunner(BaseTransformer):
                 transformer.set_batch_size(self.batch_size)
 
         transformed = deepcopy(data)
-        context = {}
         for transformer in self.pipeline:
-            transformed, context = transformer.train(transformed, **context)
-        return transformed, context
+            transformed, context = transformer.fit_transform(transformed, context)
 
-    def _transform(self, data, **context):
+    def _transform(self, data, context=None):
+        if context is None:
+            context = {}
         transformed = deepcopy(data)
-        context = {}
         for transformer in self.pipeline:
-            transformed, context = transformer.transform(transformed, **context)
+            transformed, context = transformer.transform(transformed, context)
         return transformed, context
 
     def validate_pipeline(self):
@@ -191,7 +195,7 @@ class PaddingTransformer(StatelessBaseTransformer):
         self.value = value
         self.max_length = max_length
 
-    def _transform(self, data, **context):
+    def _transform(self, data, context):
         # TODO check pad_seq params.
 
         transformed = pad_sequences(

@@ -1,7 +1,3 @@
 model:
-    train should take dataset.
+    new base class for torch models.
     how to divide data into validation, test, train? where?
-dataset:
-    dataset should not do any label transformation. delegate this to model.
-    dataset should return unique labels so that model can fit labelencoder immediately.
-    actually couldn't decide where the label encoding should be. not sure which one is effective. I should check more examples.

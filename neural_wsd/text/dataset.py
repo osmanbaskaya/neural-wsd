@@ -1,22 +1,27 @@
 import os
 
 import pandas as pd
-import torch
-from sklearn.preprocessing import LabelEncoder
+import torch.utils.data
 
 
 class WikiWordSenseDisambiguationDataset(torch.utils.data.Dataset):
     def __init__(self, directory):
         self.directory = directory
-        self.__label_encoder = LabelEncoder()
         self.__data = WikiWordSenseDisambiguationDataset.read_data_to_dataframe(directory)
-        self.__fit_to_labels()
+        self._labels = self.data["sense"].unique()
+        self._num_of_unique_labels = len(self._labels)
 
     @property
     def data(self):
         return self.__data
 
+    @property
+    def num_of_unique_labels(self):
+        return self._num_of_unique_labels
 
+    @property
+    def labels(self):
+        return self._labels
 
     @staticmethod
     def read_data_to_dataframe(directory, column_names=None):
@@ -47,14 +52,10 @@ class WikiWordSenseDisambiguationDataset(torch.utils.data.Dataset):
         row = self.data.iloc[idx]
         sample = {
             "text": row["tokenized_sentence"],
-            "label": self.transform_labels(row["sense"]),
+            "label": row["sense"],
             "offset": row["offset"],
             "word": row["target_word"],
             "id": row["id"],
         }
 
         return sample
-
-    @property
-    def num_of_unique_labels(self):
-        return len(self.__label_encoder.classes_)
