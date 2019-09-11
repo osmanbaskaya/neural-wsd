@@ -7,14 +7,13 @@ from keras.preprocessing.sequence import pad_sequences
 from pytorch_transformers import AutoTokenizer
 
 
-class Operator:
-
+class BaseTransformer:
     inputs = []
     outputs = []
 
-    def __init__(self, op_name="", next_op=None):
-        self.op_name = op_name
-        self.next_op = next_op
+    def __init__(self, name="", next_transformer=None):
+        self.name = name
+        self.next_transformer = next_transformer
 
         self._is_fitted = False
         self._pool = None
@@ -32,35 +31,35 @@ class Operator:
     def is_fitted(self):
         return self._is_fitted
 
-    def fit(self, data):
+    def fit(self, data, **context):
         self._validate_requirements(data)
 
         if not self.is_fitted:
             self._fit(data)
             self._is_fitted = True
 
-        return self.transform(data)
+        return self.transform(data, **context)
 
-    def transform(self, data):
+    def transform(self, data, **context):
         self._validate_requirements(data)
         if not self.is_fitted:
             raise ValueError("Need to fit this first.")
 
         if self.pool is not None:
-            it = cycle(Operator._batch_iter(data, self.batch_size))
+            it = cycle(BaseTransformer._batch_iter(data, self.batch_size))
             transformed = self.pool.map(self._transform, it)
         else:
-            transformed = self._transform(data)
+            transformed = self._transform(data, **context)
 
         return transformed
 
-    def fit_transform(self, data):
-        return self.fit(data)
+    def fit_transform(self, data, **context):
+        return self.fit(data, **context)
 
-    def _fit(self, data):
+    def _fit(self, data, **context):
         raise NotImplementedError()
 
-    def _transform(self, data):
+    def _transform(self, data, **context):
         raise NotImplementedError()
 
     def _validate_requirements(self, data):
@@ -80,59 +79,69 @@ class Operator:
         self._batch_size = batch_size
 
     def __or__(self, other):
-        self.next_op = other
+        self.next_transformer = other
         return other
 
     def __repr__(self):
-        return f"{self.op_name} - {super().__repr__()}"
+        return f"{self.name} - {super().__repr__()}"
 
 
-class StatelessOperator(Operator):
+class StatelessBaseTransformer(BaseTransformer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._is_fitted = True
 
-    def _fit(self, data):
+    def _fit(self, data, **context):
         pass
 
-    def _transform(self, data):
+    def _transform(self, data, **context):
         raise NotImplementedError()
 
 
-class PreTrainedModelTokenizeOp(StatelessOperator):
+class PreTrainedModelTokenize(StatelessBaseTransformer):
     def __init__(
-        self, base_model=None, max_length=512, do_lower_case=True, do_basic_tokenize=False, **kwargs
+        self,
+        base_model=None,
+        max_length=512,
+        do_lower_case=True,
+        do_basic_tokenize=False,
+        num_of_special_tokens=2,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.base_model = base_model
         self.max_length = max_length
+        self.num_of_special_tokens = num_of_special_tokens
         self._tokenizer = AutoTokenizer.from_pretrained(
             base_model, do_lower_case=do_lower_case, do_basic_tokenize=do_basic_tokenize
         )
 
-    def _transform(self, data):
+    def _transform(self, data, **context):
         data["default"] = [
-            self._tokenizer.encode(sample, add_special_tokens=True) for sample in data["default"]
+            self._tokenizer.encode(
+                sample[: self.max_length - self.num_of_special_tokens], add_special_tokens=True
+            )
+            for sample in data["default"]
         ]
 
-        return data
+        return (data,)
 
 
-class BasicTextProcessingOp(StatelessOperator):
+class BasicTextTransformer(StatelessBaseTransformer):
     # TODO: Add more text preprocessing operations.
     def __init__(self, lowercase=True, **kwargs):
         super().__init__(**kwargs)
         self.lowercase = lowercase
 
-    def _transform(self, data):
+    def _transform(self, data, **context):
         transformed = data
         if self.lowercase:
             transformed = [sample.lower() for sample in transformed]
 
-        return transformed
+        return transformed, {}
 
 
-class PipelineRunner(Operator):
+class PipelineRunner(BaseTransformer):
     def __init__(self, num_process=1, batch_size=100, **kwargs):
         super().__init__(**kwargs)
         self.num_process = num_process
@@ -142,38 +151,39 @@ class PipelineRunner(Operator):
         self.set_batch_size(batch_size)
         self.pipeline = None
 
-    @staticmethod
-    def get_pipeline(initial_op):
-        op = initial_op.next_op
+    def create_pipeline(self):
+        t = self.next_transformer
         pipeline = []
-        while op is not None:
-            pipeline.append(op)
-            op = op.next_op
-        return pipeline
+        while t is not None:
+            pipeline.append(t)
+            t = t.next_transformer
+        self.pipeline = pipeline
 
-    def _fit(self, data):
-        self.pipeline = PipelineRunner.get_pipeline(self)
+    def _fit(self, data, **context):
+        self.create_pipeline()
         if self.num_process > 1:
-            for op in self.pipeline:
-                op.set_pool(self.pool)
-                op.set_batch_size(self.batch_size)
+            for transformer in self.pipeline:
+                transformer.set_pool(self.pool)
+                transformer.set_batch_size(self.batch_size)
 
         transformed = deepcopy(data)
-        for op in self.pipeline:
-            transformed = op.train(transformed)
-        return transformed
+        context = {}
+        for transformer in self.pipeline:
+            transformed, context = transformer.train(transformed, **context)
+        return transformed, context
 
-    def _transform(self, data):
+    def _transform(self, data, **context):
         transformed = deepcopy(data)
-        for op in self.pipeline:
-            transformed = op.transform(transformed)
-        return transformed
+        context = {}
+        for transformer in self.pipeline:
+            transformed, context = transformer.transform(transformed, **context)
+        return transformed, context
 
     def validate_pipeline(self):
         pass
 
 
-class PaddingOp(StatelessOperator):
+class PaddingTransformer(StatelessBaseTransformer):
     def __init__(self, max_length=512, padding="post", truncating="post", value=0, **kwargs):
         super().__init__(**kwargs)
         self.padding = padding
@@ -181,7 +191,7 @@ class PaddingOp(StatelessOperator):
         self.value = value
         self.max_length = max_length
 
-    def _transform(self, data):
+    def _transform(self, data, **context):
         # TODO check pad_seq params.
 
         transformed = pad_sequences(
@@ -194,4 +204,8 @@ class PaddingOp(StatelessOperator):
 
         mask = torch.tensor(transformed != 0, dtype=torch.int64, requires_grad=False)
 
-        return transformed, mask
+        if "mask" in context:
+            raise ValueError("context has the key `mask`")
+
+        context["mask"] = mask
+        return transformed, context

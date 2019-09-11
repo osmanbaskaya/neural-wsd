@@ -16,20 +16,7 @@ class WikiWordSenseDisambiguationDataset(torch.utils.data.Dataset):
     def data(self):
         return self.__data
 
-    def __fit_to_labels(self):
-        self.__label_encoder.fit(self.data["sense"].unique())
 
-    def transform_labels(self, y):
-        try:
-            return self.__label_encoder.transform(y)
-        except ValueError:
-            return self.__label_encoder.transform([y])[0]
-
-    def inverse_transform_labels(self, encoded_labels):
-        try:
-            return self.__label_encoder.inverse_transform(encoded_labels)
-        except ValueError:
-            return self.__label_encoder.inverse_transform([encoded_labels])[0]
 
     @staticmethod
     def read_data_to_dataframe(directory, column_names=None):
