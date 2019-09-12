@@ -6,8 +6,8 @@ from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from neural_wsd.text.dataset import WikiWordSenseDisambiguationDataset
-from neural_wsd.text.transformers import (
+from .text.dataset import WikiWordSenseDisambiguationDataset, sample_data
+from .text.transformers import (
     PreTrainedModelTokenize,
     BasicTextTransformer,
     PipelineRunner,
@@ -54,7 +54,9 @@ class BaseModel:
 
         self.fit_to_labels(data.labels)
 
-        train_dl, validation_dl = self.create_data_loader(data)
+        train_sample, validation_sample = sample_data(data, 0.9)
+        train_dl = self.create_data_loader(data, train_sample)
+        validation_dl = self.create_data_loader(data, validation_sample)
 
         # train_epoch_it = tqdm(train_dl, desc="Training Iteration")
         # validation_epoch_it = tqdm(validation_dl, desc="Validation Iteration")
@@ -69,14 +71,10 @@ class BaseModel:
             )
             print(loss, logits)
 
-    def create_data_loader(self, data):
-        if isinstance(data, torch.utils.data.Dataset):
-            train_dl = DataLoader(data, **self.tparams["loader"])
-        else:
-            pass  # TODO: Implement later.
-
-        # TODO implement here later.
-        return train_dl, []
+    def create_data_loader(self, data, sampler):
+        if not isinstance(data, torch.utils.data.Dataset):
+            raise ValueError("Should be Dataset instance")
+        return DataLoader(data, sampler=sampler, **self.tparams["loader"])
 
     def override_hparams(self, params):
         BaseModel._override_params(self.hparams, params)
@@ -140,12 +138,3 @@ class PreTrainedNeuralDisambiguator(BaseModel):
     def _get_model(self):
         bert_config = BertConfig.from_pretrained(self.base_model, num_labels=self.num_labels)
         return BertForSequenceClassification.from_pretrained(self.base_model, config=bert_config)
-
-
-dataset = WikiWordSenseDisambiguationDataset(directory="dataset")
-model = PreTrainedNeuralDisambiguator(
-    base_model="bert-base-uncased", num_labels=dataset.num_of_unique_labels
-)
-model.train(dataset)
-model.predict(["here is some data", "some more"])
-print(model)
