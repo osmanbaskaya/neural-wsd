@@ -6,7 +6,7 @@ from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from .text.dataset import WikiWordSenseDisambiguationDataset, sample_data
+from .text.dataset import sample_data
 from .text.transformers import (
     PreTrainedModelTokenize,
     BasicTextTransformer,
