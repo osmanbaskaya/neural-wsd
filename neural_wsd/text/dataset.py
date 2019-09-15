@@ -1,12 +1,16 @@
-import os
+import csv
+from typing import NamedTuple
+import glob
+import logging
 import random
+from abc import abstractmethod
 
 import math
-import pandas as pd
 import torch.utils.data
-from torch.utils.data.sampler import SubsetRandomSampler, SequentialSampler
+from torch.utils.data.sampler import SubsetRandomSampler
 
 SEED = 42
+LOGGER = logging.getLogger("__name___")
 
 
 def sample_data(dataset, size_of_first_dataset=0.8, shuffle=True, seed=SEED):
@@ -27,66 +31,77 @@ def sample_data(dataset, size_of_first_dataset=0.8, shuffle=True, seed=SEED):
     return SubsetRandomSampler(first_data_indices), SubsetRandomSampler(second_data_indices)
 
 
-class WikiWordSenseDisambiguationDataset(torch.utils.data.Dataset):
-    def __init__(self, data=None, label_column=None):
-        if label_column is None:
-            label_column = "sense"
-        self.__data = data
-        self._labels = self.data[label_column].unique()
-        self._num_of_unique_labels = len(self._labels)
+class WordSenseDisambiguationDataset(torch.utils.data.Dataset):
+    def __init__(self, data=None):
+        self._examples, labels = self._create_examples(data)
+        self._labels = list(labels)
+        self._num_labels = len(self._labels)
 
-    @staticmethod
-    def from_tsv(directory, label_column=None):
-        data = WikiWordSenseDisambiguationDataset.read_data_to_dataframe(directory)
-        return WikiWordSenseDisambiguationDataset(data=data, label_column=label_column)
-
-    @property
-    def data(self):
-        return self.__data
+    @classmethod
+    def from_tsv(cls, directory, pattern):
+        files = glob.glob(f"{directory}/*{pattern}*", recursive=True)
+        LOGGER.info(f"{len(files)} will be read.")
+        if len(files) == 0:
+            raise ValueError("Check the directory/pattern. no file found.")
+        all_lines = cls._read_all_tsv_files(files)
+        return cls(data=all_lines)
 
     @property
-    def num_of_unique_labels(self):
-        return self._num_of_unique_labels
+    def examples(self):
+        return self._examples
+
+    @property
+    def num_of_labels(self):
+        return self._num_labels
 
     @property
     def labels(self):
         return self._labels
 
     @staticmethod
-    def read_data_to_dataframe(directory, column_names=None):
-        # TODO: replace here with a general solution
-        if column_names is None:
-            column_names = [
-                "id",
-                "target_word",
-                "offset",
-                "sense",
-                "annotated_sentence",
-                "tokenized_sentence",
-                "sentence",
-            ]
-        all_data = []
-        for filename in os.listdir(directory)[:2]:
-            fn = os.path.join(directory, filename)
-            print(fn)
-            all_data.append(
-                pd.read_csv(fn, delimiter="\t", names=column_names, header=None, index_col=False)
-            )
+    def _read_all_tsv_files(files):
+        lines = []
+        for fn in files:
+            LOGGER.info(fn)
+            with open(fn, "r", encoding="utf-8") as f:
+                reader = csv.reader(f, delimiter="\t")
+                lines.extend([line for line in reader])
+        return lines
 
-        return pd.concat(all_data, sort=False)
+    @abstractmethod
+    def _create_examples(self, data):
+        raise NotImplementedError
 
     def __len__(self):
-        return self.__data.shape[0]
+        return len(self._examples)
 
     def __getitem__(self, idx):
-        row = self.data.iloc[idx]
-        # Todo: replace here with dict(**row).
-        sample = {
-            "text": row["tokenized_sentence"],
-            "label": row["sense"],
-            "offset": row["offset"],
-            "word": row["target_word"],
-            "id": row["id"],
-        }
+        return self.examples[idx]
 
-        return sample
+
+class WikiWordSenseDisambiguationDataset(WordSenseDisambiguationDataset):
+    """Basic Wikipedia Word Sense Disambiguation dataset."""
+
+    class Example(NamedTuple):
+        id: int
+        target_word: str
+        offset: int
+        label: str
+        text: str
+
+    def _create_examples(self, data):
+        examples = []
+        labels = set()
+        for d in data:
+            e = WikiWordSenseDisambiguationDataset.Example(
+                id=int(d[0]),
+                target_word=d[1],
+                offset=int(d[2]),
+                label=d[3],
+                text=d[5],  # taking tokenized text.
+            )
+            examples.append(e)
+            labels.add(e.label)
+
+        return examples, labels
+

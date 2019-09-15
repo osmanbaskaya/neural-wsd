@@ -1,6 +1,7 @@
 import multiprocessing
+from sklearn.preprocessing import LabelEncoder
 from copy import deepcopy
-
+from typing import NamedTuple
 import torch
 from itertools import cycle
 from keras.preprocessing.sequence import pad_sequences
@@ -52,6 +53,7 @@ class BaseTransformer:
 
         if self.pool is not None:
             it = cycle(BaseTransformer._batch_iter(data, self.batch_size))
+            # TODO make sure that all data is unfolded.
             transformed = self.pool.map(self._transform, it)
         else:
             transformed = self._transform(data, context)
@@ -70,7 +72,7 @@ class BaseTransformer:
     def _validate_requirements(self, data):
         if not all(key in data for key in self.inputs):
             # TODO more info for the error
-            raise ValueError("Pipeline is not feasiable.")
+            raise ValueError("Pipeline is not feasible.")
 
     @staticmethod
     def _batch_iter(data, batch_size):
@@ -143,7 +145,7 @@ class BasicTextTransformer(StatelessBaseTransformer):
         if self.lowercase:
             transformed = [sample.lower() for sample in transformed]
 
-        return transformed, {}
+        return transformed, context
 
 
 class PipelineRunner(BaseTransformer):
@@ -176,6 +178,8 @@ class PipelineRunner(BaseTransformer):
             transformed, context = transformer.fit_transform(transformed, context)
 
     def _transform(self, data, context=None):
+        if self.pipeline is None:
+            self.create_pipeline()
         if context is None:
             context = {}
         transformed = deepcopy(data)
@@ -206,7 +210,8 @@ class PaddingTransformer(StatelessBaseTransformer):
             value=self.value,
         )
 
-        mask = torch.tensor(transformed != 0, dtype=torch.int64, requires_grad=False)
+        # todo dtype check this
+        mask = (transformed != 0).astype("int64")
 
         if "mask" in context:
             raise ValueError("context has the key `mask`")

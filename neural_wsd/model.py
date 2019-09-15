@@ -56,6 +56,7 @@ class BaseModel:
 
         train_sample, validation_sample = sample_data(data, 0.9)
         train_dl = self.create_data_loader(data, train_sample)
+
         validation_dl = self.create_data_loader(data, validation_sample)
 
         # train_epoch_it = tqdm(train_dl, desc="Training Iteration")
@@ -70,6 +71,8 @@ class BaseModel:
                 input_ids=input_ids, labels=labels, attention_mask=attention_mask
             )
             print(loss, logits)
+            if step == 0:
+                break
 
     def create_data_loader(self, data, sampler):
         if not isinstance(data, torch.utils.data.Dataset):
@@ -110,7 +113,11 @@ class BaseModel:
 
 
 class PreTrainedNeuralDisambiguator(BaseModel):
-    _hparams = {"tokenizer": {"max_length": 512}, "model": {}, "runner": {"batch_size": 100}}
+    _hparams = {
+        "tokenizer": {"max_length": 512, "name": "tokenizer"},
+        "model": {},
+        "runner": {"batch_size": 100},
+    }
 
     _tparams = {"loader": {"shuffle": False, "num_workers": 1, "batch_size": 2}}
 
