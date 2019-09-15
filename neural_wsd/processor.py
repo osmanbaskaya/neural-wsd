@@ -1,5 +1,5 @@
 import logging
-import toolz
+from .utils import merge_params
 import dill
 import os
 from collections import OrderedDict
@@ -48,14 +48,9 @@ class WikiWordSenseDataProcessor:
         self._label_encoder = None
         self.data_pipeline = None
 
-        if hparams is None:
-            hparams = {}
-        if tparams is None:
-            tparams = {}
+        self._hparams = merge_params(self.default_hparams, hparams)
+        self._tparams = merge_params(self.default_tparams, tparams)
 
-        self._hparams = toolz.merge(WikiWordSenseDataProcessor.default_hparams, hparams)
-
-        self._tparams = toolz.merge(WikiWordSenseDataProcessor.default_tparams, tparams)
 
     @property
     def label_encoder(self):
