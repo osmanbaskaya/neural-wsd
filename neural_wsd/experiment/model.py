@@ -1,9 +1,9 @@
 # coding=utf-8
-from time import sleep
 import logging
 from abc import abstractmethod
 from collections import namedtuple
 
+import dill
 import torch
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 from pytorch_transformers import AutoModelForSequenceClassification, AutoConfig
@@ -52,7 +52,7 @@ class ExperimentBaseModel:
             inputs["token_type_ids"] = batch[2]
 
         if len(batch) == 4:
-            inputs["labels"]: batch[3]
+            inputs["labels"] = batch[3]
 
         return {k: v.to(self.device) for k, v in inputs.items()}
 
@@ -162,9 +162,9 @@ class ExperimentBaseModel:
             tensor_data = self.processor.create_tensor_data(data, labels_available=False)
             pred_iter = map(
                 self._prepare_batch_input,
-                DataLoader(tensor_data, batch_size=self.hparams.batch_size),
+                DataLoader(tensor_data, batch_size=self.tparams.batch_size),
             )
-            return torch.cat(tensors=[self.model(**batch)[0] for batch in pred_iter]).numpy()
+            return torch.cat(tensors=[self.model(**batch)[0] for batch in pred_iter]).cpu().numpy()
 
     def evaluate(self, test_data):
         pass
@@ -174,7 +174,7 @@ class ExperimentBaseModel:
         raise NotImplementedError()
 
     def save(self):
-        pass
+        torch.save(self.model, 'model.pkl', pickle_module=dill)
 
     def load(self):
         pass
@@ -185,8 +185,8 @@ class ExperimentBaseModel:
 
 
 class PretrainedExperimentModel(ExperimentBaseModel):
-    def __init__(self, base_model, processor, hparams=None, tparams=None):
-        super().__init__(processor, hparams, tparams)
+    def __init__(self, base_model, processor, device=None, hparams=None, tparams=None):
+        super().__init__(processor, device, hparams, tparams)
         self.base_model = base_model
         self.processor = processor
         self.num_labels = len(processor.label_encoder.classes_)
