@@ -40,6 +40,16 @@ class ExperimentBaseModel:
     def get_default_tparams(self):
         raise NotImplementedError()
 
+    @staticmethod
+    def prepare_batch_input(batch, model_arch, device):
+        inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
+
+        # XLM and RoBERTa don't use segment_ids
+        if model_arch in ["bert", "xlnet"]:
+            inputs["token_type_ids"] = batch[2]
+
+        return {k: v.to(device) for k, v in inputs.items()}
+
     def train(self, train_dataset, validation_dataset):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         LOGGER.info(f"Device: {device}")
@@ -51,13 +61,14 @@ class ExperimentBaseModel:
 
         print(model)
 
-        LOGGER.info(f"Total number of params for {self.base_model_name()}: {total_params}")
-        print(f"Total number of params for {self.base_model_name()}: {total_params}")
+        LOGGER.info(f"Total number of params for {self.base_model_arch()}: {total_params}")
 
         train_sampler = RandomSampler(train_dataset)
         train_dataloader = DataLoader(
             train_dataset, sampler=train_sampler, batch_size=tp.batch_size
         )
+
+        LOGGER.info(f"Batch size: {tp.batch_size}")
 
         t_total = tp.max_steps
         num_train_epochs = tp.max_steps // len(train_dataloader) + 1
@@ -103,17 +114,7 @@ class ExperimentBaseModel:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
                 model.train()
-                batch = tuple(t.to(device) for t in batch)
-                inputs = {
-                    "input_ids": batch[0],
-                    "attention_mask": batch[1],
-                    # XLM and RoBERTa don't use segment_ids
-                    # "token_type_ids": batch[2]
-                    # if self.base_model_name() in ["bert", "xlnet"]
-                    # else None,
-                    "labels": batch[3],
-                }
-
+                inputs = self.prepare_batch_input(batch, self.base_model_arch(), device)
                 outputs = model(**inputs)
                 loss = outputs[0]
                 print_gpu_info(0.3)
@@ -156,13 +157,13 @@ class ExperimentBaseModel:
     def load(self):
         pass
 
-    def base_model_name(self):
+    def base_model_arch(self):
         raise NotImplementedError()
 
 
 class PretrainedExperimentModel(ExperimentBaseModel):
-    def __init__(self, base_model, processor):
-        super().__init__()
+    def __init__(self, base_model, processor, hparams=None, tparams=None):
+        super().__init__(hparams, tparams)
         self.base_model = base_model
         self.processor = processor
         self.num_labels = len(processor.label_encoder.classes_)
@@ -172,7 +173,7 @@ class PretrainedExperimentModel(ExperimentBaseModel):
 
     def get_default_tparams(self):
         return {
-            "batch_size": 256,
+            "batch_size": 512,
             "max_steps": 100,
             "weight_decay": 0.0,
             "adam_epsilon": 1e-8,
@@ -188,5 +189,5 @@ class PretrainedExperimentModel(ExperimentBaseModel):
         config = AutoConfig.from_pretrained(self.base_model, num_labels=self.num_labels)
         return AutoModelForSequenceClassification.from_pretrained(self.base_model, config=config)
 
-    def base_model_name(self):
+    def base_model_arch(self):
         return self.base_model.split("-")[0]

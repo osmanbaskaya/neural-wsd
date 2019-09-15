@@ -10,11 +10,11 @@ def run():
 
     from .processor import load_data, WikiWordSenseDataProcessor, ProcessorFactory
 
-    base_model = "bert-base-uncased"
-    # base_model = "distilbert-base-uncased"
+    # base_model = "bert-base-uncased"
+    base_model = "distilbert-base-uncased"
     cache_dir = "cache/exp1"
 
-    processor_params = {"hparams": {"tokenizer": {"max_seq_len": 512}}}
+    processor_params = {"hparams": {"tokenizer": {"max_seq_len": 64}}}
     processor = ProcessorFactory.get_or_create(
         WikiWordSenseDataProcessor, cache_dir=cache_dir, base_model=base_model, **processor_params
     )
@@ -26,7 +26,10 @@ def run():
 
     cached_data_fn = "wsd-data.pkl"
     datasets = load_data(processor, dataset_directory, cache_dir, cached_data_fn)
-    model = PretrainedExperimentModel(base_model, processor)
+
+    tparams = {"batch_size": 320}
+
+    model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
     model.train(datasets["tsv"], datasets["ts"])
 
 

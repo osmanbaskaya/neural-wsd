@@ -1,3 +1,6 @@
 model:
-    new base class for torch models.
-    how to divide data into validation, test, train? where?
+    refactoring training
+    adding validation part.
+    how to save network partially - only the trained weights?
+    predict method
+
