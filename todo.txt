@@ -2,5 +2,3 @@ model:
     refactoring training
     adding validation part.
     how to save network partially - only the trained weights?
-    predict method
-

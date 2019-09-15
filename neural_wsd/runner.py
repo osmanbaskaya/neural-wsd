@@ -31,6 +31,7 @@ def run():
 
     model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
     model.train(datasets["tsv"], datasets["ts"])
+    print(model.predict(["Bass likes warm waters.", "Bass music is great"]))
 
 
 if __name__ == "__main__":

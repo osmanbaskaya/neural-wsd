@@ -1,11 +1,12 @@
 import logging
-from .utils import merge_params
-import dill
 import os
 from collections import OrderedDict
+from collections.abc import Iterable
 from typing import NamedTuple
 
+import dill
 import torch
+from itertools import cycle
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -16,13 +17,14 @@ from .text.transformers import (
     PipelineRunner,
     PaddingTransformer,
 )
+from .utils import merge_params
 
 LOGGER = logging.getLogger(__name__)
 
 
 class InputFeatures(NamedTuple):
     input_ids: torch.tensor
-    input_mask: torch.tensor
+    attention_mask: torch.tensor
     segment_ids: torch.tensor
     label_id: torch.tensor
 
@@ -64,53 +66,70 @@ class WikiWordSenseDataProcessor:
     def tparams(self):
         return self._tparams
 
-    def _create_examples(self, transformed_data, attention_masks, dataset):
+    def _create_examples(self, transformed_data, attention_masks, labels=None):
         features = []
-        for i in range(len(transformed_data)):
+        if labels is None:
+            labels = cycle([None])
+
+        for input_ids, mask, label in zip(transformed_data, attention_masks, labels):
             features.append(
                 InputFeatures(
-                    input_ids=transformed_data[i],
-                    input_mask=attention_masks[i],
+                    input_ids=input_ids,
+                    attention_mask=mask,
                     # TODO: hack - check this if it works.
-                    segment_ids=[0] * len(attention_masks[i]),
-                    label_id=float(self.transform_labels([dataset[i].label])),
+                    segment_ids=[0] * len(mask),
+                    label_id=label,
                 )
             )
+
         return features
 
-    def fit_transform(self, dataset):
+    def get_examples_and_labels(self, dataset):
+        # TODO; create another class out of this and make this function abstractmethod
+        pass
+
+    def fit_transform(self, examples, labels):
 
         self._label_encoder = LabelEncoder()
-        self.label_encoder.fit(dataset.labels)
+        labels = self.label_encoder.fit_transform(labels)
 
         self.data_pipeline = self._get_data_pipeline()
-        texts = [e.text for e in dataset]
-        transformed_data, context = self.data_pipeline.fit_transform(texts)
+        transformed_data, context = self.data_pipeline.fit_transform(examples)
         attention_masks = context["mask"]
-        return self._create_examples(transformed_data, attention_masks, dataset)
+        return self._create_examples(transformed_data, attention_masks, labels)
 
-    def fit(self, dataset):
-        return self.fit_transform(dataset)
+    def fit(self, examples, labels):
+        return self.fit_transform(examples, labels)
 
-    def transform(self, dataset):
+    def transform(self, examples, labels=None):
         if self.data_pipeline is None:
             raise ValueError("You need to fit the data first")
 
-        transformed_data, context = self.data_pipeline.fit_transform([e.text for e in dataset])
+        if labels is not None:
+            labels = self.transform_labels(labels)
+
+        transformed_data, context = self.data_pipeline.fit_transform(examples)
         attention_masks = context["mask"]
-        return self._create_examples(transformed_data, attention_masks, dataset)
+        return self._create_examples(transformed_data, attention_masks, labels)
 
     def transform_labels(self, y):
-        try:
-            return self._label_encoder.transform(y)
-        except ValueError:
-            return self._label_encoder.transform([y])[0]
+        if not isinstance(y, list):
+            y = [y]
+
+        y = self._label_encoder.transform(y)
+        if len(y) == 1:
+            y = y[0]
+        return y
 
     def inverse_transform_labels(self, encoded_labels):
-        try:
-            return self._label_encoder.inverse_transform(encoded_labels)
-        except ValueError:
-            return self._label_encoder.inverse_transform([encoded_labels])[0]
+
+        if not isinstance(encoded_labels, Iterable):
+            encoded_labels = [encoded_labels]
+
+        y = self._label_encoder.inverse_transform(encoded_labels)
+        if len(y) == 1:
+            y = y[0]
+        return y
 
     def create_data_loader(self, data, sampler):
         if not isinstance(data, torch.utils.data.Dataset):
@@ -140,6 +159,7 @@ class WikiWordSenseDataProcessor:
         processor = cls(d["base_model"], d["hparams"], d["tparams"])
         processor._label_encoder = d["label_encoder"]
         processor.cache_dir = cache_dir
+        processor.data_pipeline = processor._get_data_pipeline()
         return processor
 
     def save(self, cache_dir):
@@ -159,13 +179,18 @@ class WikiWordSenseDataProcessor:
         return os.path.exists(os.path.join(cache_dir, cls.cache_fn))
 
     @staticmethod
-    def create_tensor_data(features):
+    def create_tensor_data(features, labels_available=True):
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-        all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
+        all_input_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
         all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
-        all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.long)
 
-        return TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+        dataset = [all_input_ids, all_input_mask, all_segment_ids]
+
+        # Do not add labels when no labels available (e.g., inference)
+        if labels_available:
+            dataset.append(torch.tensor([f.label_id for f in features], dtype=torch.long))
+
+        return TensorDataset(*dataset)
 
 
 def load_data(processor, data_dir, cache_dir, cached_data_fn, dataset_types=None):
@@ -184,12 +209,14 @@ def load_data(processor, data_dir, cache_dir, cached_data_fn, dataset_types=None
             features = torch.load(cache_fn, pickle_module=dill)
         else:
             dataset = WikiWordSenseDisambiguationDataset.from_tsv(data_dir, pattern=dataset_type)
+            examples = [e.text for e in dataset]
+            labels = [e.label for e in dataset]
             if dataset_type == "tsv":
                 # if dataset_type == "train":
-                features = processor.fit_transform(dataset)
+                features = processor.fit_transform(examples, labels)
                 processor.save(cache_dir)
             else:
-                features = processor.transform(dataset)
+                features = processor.transform(examples, labels)
 
             torch.save(features, cache_fn, pickle_module=dill)
         datasets[dataset_type] = processor.create_tensor_data(features)

@@ -16,8 +16,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ExperimentBaseModel:
-    def __init__(self, hparams=None, tparams=None):
+    def __init__(self, processor, device=None, hparams=None, tparams=None):
         self.model = None
+        self.processor = processor
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._hparams = merge_params(self.get_default_hparams(), hparams)
         self._tparams = merge_params(self.get_default_tparams(), tparams)
@@ -40,28 +43,30 @@ class ExperimentBaseModel:
     def get_default_tparams(self):
         raise NotImplementedError()
 
-    @staticmethod
-    def prepare_batch_input(batch, model_arch, device):
-        inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
+    def _prepare_batch_input(self, batch):
+
+        inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
 
         # XLM and RoBERTa don't use segment_ids
-        if model_arch in ["bert", "xlnet"]:
+        if self.base_model_arch in ["bert", "xlnet"]:
             inputs["token_type_ids"] = batch[2]
 
-        return {k: v.to(device) for k, v in inputs.items()}
+        if len(batch) == 4:
+            inputs["labels"]: batch[3]
+
+        return {k: v.to(self.device) for k, v in inputs.items()}
 
     def train(self, train_dataset, validation_dataset):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        LOGGER.info(f"Device: {device}")
+        LOGGER.info(f"Device: {self.device}")
 
         tp = self.tparams
         hp = self.hparams
-        model = self._get_model().to(device)
-        total_params = total_num_of_params(model.named_parameters())
+        self.model = self._get_model().to(self.device)
+        total_params = total_num_of_params(self.model.named_parameters())
 
-        print(model)
+        print(self.model)
 
-        LOGGER.info(f"Total number of params for {self.base_model_arch()}: {total_params}")
+        LOGGER.info(f"Total number of params for {self.base_model_arch}: {total_params}")
 
         train_sampler = RandomSampler(train_dataset)
         train_dataloader = DataLoader(
@@ -84,7 +89,7 @@ class ExperimentBaseModel:
             # },
             {
                 "params": [
-                    p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
+                    p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": 0.0,
             }
@@ -98,7 +103,7 @@ class ExperimentBaseModel:
                 raise ImportError(
                     "Please install apex from https://www.github.com/nvidia/apex to use fp16 training."
                 )
-            model, optimizer = amp.initialize(model, optimizer, opt_level=tp.fp16_opt_level)
+            model, optimizer = amp.initialize(self.model, optimizer, opt_level=tp.fp16_opt_level)
 
         # # multi-gpu training (should be after apex fp16 initialization)
         # if tp.n_gpu > 1:
@@ -106,16 +111,16 @@ class ExperimentBaseModel:
 
         global_step = 0
         tr_loss, logging_loss = 0.0, 0.0
-        model.zero_grad()
+        self.model.zero_grad()
         train_iterator = trange(int(num_train_epochs), desc="Epoch")
         print("\n\n GPU Memory before training starts.\n")
         print_gpu_info()
         for _ in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
-                model.train()
-                inputs = self.prepare_batch_input(batch, self.base_model_arch(), device)
-                outputs = model(**inputs)
+                self.model.train()
+                inputs = self._prepare_batch_input(batch)
+                outputs = self.model(**inputs)
                 loss = outputs[0]
                 print_gpu_info(0.3)
 
@@ -127,12 +132,12 @@ class ExperimentBaseModel:
                     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), tp.max_grad_norm)
                 else:
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), tp.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), tp.max_grad_norm)
 
                 tr_loss += loss.item()
                 scheduler.step()  # Update learning rate schedule
                 optimizer.step()
-                model.zero_grad()
+                self.model.zero_grad()
                 global_step += 1
 
                 if 0 < tp.max_steps < global_step:
@@ -143,6 +148,23 @@ class ExperimentBaseModel:
                     break
 
         return global_step, tr_loss / global_step
+
+    def predict(self, sentences):
+        predictions = self._predict(sentences)
+        return self.processor.inverse_transform_labels(predictions.argmax(axis=1))
+
+    def _predict(self, sentences):
+        if isinstance(sentences, str):
+            sentences = [sentences]
+
+        data = self.processor.transform(sentences)
+        with torch.no_grad():
+            tensor_data = self.processor.create_tensor_data(data, labels_available=False)
+            pred_iter = map(
+                self._prepare_batch_input,
+                DataLoader(tensor_data, batch_size=self.hparams.batch_size),
+            )
+            return torch.cat(tensors=[self.model(**batch)[0] for batch in pred_iter]).numpy()
 
     def evaluate(self, test_data):
         pass
@@ -157,13 +179,14 @@ class ExperimentBaseModel:
     def load(self):
         pass
 
+    @property
     def base_model_arch(self):
         raise NotImplementedError()
 
 
 class PretrainedExperimentModel(ExperimentBaseModel):
     def __init__(self, base_model, processor, hparams=None, tparams=None):
-        super().__init__(hparams, tparams)
+        super().__init__(processor, hparams, tparams)
         self.base_model = base_model
         self.processor = processor
         self.num_labels = len(processor.label_encoder.classes_)
@@ -189,5 +212,6 @@ class PretrainedExperimentModel(ExperimentBaseModel):
         config = AutoConfig.from_pretrained(self.base_model, num_labels=self.num_labels)
         return AutoModelForSequenceClassification.from_pretrained(self.base_model, config=config)
 
+    @property
     def base_model_arch(self):
         return self.base_model.split("-")[0]
