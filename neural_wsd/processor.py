@@ -39,7 +39,8 @@ class ProcessorFactory:
 
 class WikiWordSenseDataProcessor:
 
-    default_hparams = {"tokenizer": {"max_length": 512}, "runner": {"batch_size": 100}}
+    # TODO remove these params as class param.
+    default_hparams = {"tokenizer": {"max_seq_len": 512}, "runner": {"batch_size": 100}}
     default_tparams = {"loader": {"shuffle": False, "num_workers": 1, "batch_size": 2}}
     cache_fn = "wiki-wsd-processor.pkl"
 
@@ -50,7 +51,6 @@ class WikiWordSenseDataProcessor:
 
         self._hparams = merge_params(self.default_hparams, hparams)
         self._tparams = merge_params(self.default_tparams, tparams)
-
 
     @property
     def label_encoder(self):
@@ -119,11 +119,12 @@ class WikiWordSenseDataProcessor:
 
     def _get_data_pipeline(self):
         # Todo: many hardcoded stuff here.
+        max_seq_len = self.hparams["tokenizer"]["max_seq_len"]
         lowercase_op = BasicTextTransformer(name="text-tr", lowercase=True)
         tokenizer_op = PreTrainedModelTokenize(
             name="tokenizer", base_model=self.base_model, **self.hparams["tokenizer"]
         )
-        padding_op = PaddingTransformer(name="padding-op")
+        padding_op = PaddingTransformer(name="padding-op", max_seq_len=max_seq_len)
 
         runner = PipelineRunner(name="runner", **self.hparams["runner"])
 

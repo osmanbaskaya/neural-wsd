@@ -109,7 +109,7 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
     def __init__(
         self,
         base_model=None,
-        max_length=512,
+        max_seq_len=512,
         do_lower_case=True,
         do_basic_tokenize=False,
         num_of_special_tokens=2,
@@ -117,7 +117,7 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
     ):
         super().__init__(**kwargs)
         self.base_model = base_model
-        self.max_length = max_length
+        self.max_length = max_seq_len
         self.num_of_special_tokens = num_of_special_tokens
         self._tokenizer = AutoTokenizer.from_pretrained(
             base_model, do_lower_case=do_lower_case, do_basic_tokenize=do_basic_tokenize
@@ -192,12 +192,12 @@ class PipelineRunner(BaseTransformer):
 
 
 class PaddingTransformer(StatelessBaseTransformer):
-    def __init__(self, max_length=512, padding="post", truncating="post", value=0, **kwargs):
+    def __init__(self, max_seq_len=512, padding="post", truncating="post", value=0, **kwargs):
         super().__init__(**kwargs)
         self.padding = padding
         self.truncating = truncating
         self.value = value
-        self.max_length = max_length
+        self.max_length = max_seq_len
 
     def _transform(self, data, context):
         # TODO check pad_seq params.

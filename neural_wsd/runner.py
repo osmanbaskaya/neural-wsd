@@ -11,11 +11,16 @@ def run():
     from .processor import load_data, WikiWordSenseDataProcessor, ProcessorFactory
 
     base_model = "bert-base-uncased"
+    # base_model = "distilbert-base-uncased"
     cache_dir = "cache/exp1"
 
+    processor_params = {"hparams": {"tokenizer": {"max_seq_len": 512}}}
     processor = ProcessorFactory.get_or_create(
-        WikiWordSenseDataProcessor, cache_dir=cache_dir, base_model=base_model
+        WikiWordSenseDataProcessor, cache_dir=cache_dir, base_model=base_model, **processor_params
     )
+
+    print(processor.hparams)
+    print(processor.tparams)
 
     dataset_directory = "dataset"
 

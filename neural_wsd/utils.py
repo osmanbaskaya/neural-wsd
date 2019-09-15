@@ -1,11 +1,17 @@
+import logging
 import random
+import subprocess
+from functools import reduce
+from pprint import pprint
 
 import numpy as np
 import toolz
 import torch
 import yaml
+from time import sleep
 
 SEED = 42
+LOGGER = logging.getLogger(__name__)
 
 
 def configure_logger():
@@ -17,7 +23,6 @@ def configure_logger():
 
 
 def merge_params(params, higher_priority_params):
-
     if params is None:
         params = {}
     if higher_priority_params is None:
@@ -32,3 +37,22 @@ def set_seed(seed, n_gpu=0):
     torch.manual_seed(seed)
     # if n_gpu > 0:
     #     torch.cuda.manual_seed_all(seed)
+
+
+def print_gpu_info(seconds_to_sleep=1):
+    try:
+        sleep(seconds_to_sleep)
+        process = subprocess.Popen("/usr/bin/nvidia-smi", stdout=subprocess.PIPE)
+        output, error = process.communicate()
+        # Returning only the memory.
+        output = output.decode().split("\n")[8].split("|")[2].strip()
+        pprint(output)
+    except FileNotFoundError:
+        pass
+
+
+def total_num_of_params(named_params):
+    total = 0
+    for n, p in named_params:
+        total += reduce(np.multiply, p.shape)
+    return total

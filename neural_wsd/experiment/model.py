@@ -1,4 +1,5 @@
 # coding=utf-8
+from time import sleep
 import logging
 from abc import abstractmethod
 from collections import namedtuple
@@ -9,7 +10,7 @@ from pytorch_transformers import AutoModelForSequenceClassification, AutoConfig
 from torch.utils.data import DataLoader, RandomSampler
 from tqdm import trange, tqdm
 
-from ..utils import merge_params
+from ..utils import merge_params, print_gpu_info, total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,10 +42,17 @@ class ExperimentBaseModel:
 
     def train(self, train_dataset, validation_dataset):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        LOGGER.info(f"Device: {device}")
 
         tp = self.tparams
         hp = self.hparams
-        model = self._get_model()
+        model = self._get_model().to(device)
+        total_params = total_num_of_params(model.named_parameters())
+
+        print(model)
+
+        LOGGER.info(f"Total number of params for {self.base_model_name()}: {total_params}")
+        print(f"Total number of params for {self.base_model_name()}: {total_params}")
 
         train_sampler = RandomSampler(train_dataset)
         train_dataloader = DataLoader(
@@ -57,18 +65,18 @@ class ExperimentBaseModel:
         # Prepare optimizer and schedule (linear warmup and decay)
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": tp.weight_decay,
-            },
+            # {
+            # "params": [
+            #     p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)
+            # ],
+            # "weight_decay": tp.weight_decay,
+            # },
             {
                 "params": [
                     p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": 0.0,
-            },
+            }
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=tp.learning_rate, eps=tp.adam_epsilon)
         scheduler = WarmupLinearSchedule(optimizer, warmup_steps=tp.warmup_steps, t_total=t_total)
@@ -81,14 +89,16 @@ class ExperimentBaseModel:
                 )
             model, optimizer = amp.initialize(model, optimizer, opt_level=tp.fp16_opt_level)
 
-        # multi-gpu training (should be after apex fp16 initialization)
-        if tp.n_gpu > 1:
-            model = torch.nn.DataParallel(model)
+        # # multi-gpu training (should be after apex fp16 initialization)
+        # if tp.n_gpu > 1:
+        #     model = torch.nn.DataParallel(model)
 
         global_step = 0
         tr_loss, logging_loss = 0.0, 0.0
         model.zero_grad()
         train_iterator = trange(int(num_train_epochs), desc="Epoch")
+        print("\n\n GPU Memory before training starts.\n")
+        print_gpu_info()
         for _ in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
@@ -98,15 +108,15 @@ class ExperimentBaseModel:
                     "input_ids": batch[0],
                     "attention_mask": batch[1],
                     # XLM and RoBERTa don't use segment_ids
-                    "token_type_ids": batch[2]
-                    if self.base_model_name() in ["bert", "xlnet"]
-                    else None,
+                    # "token_type_ids": batch[2]
+                    # if self.base_model_name() in ["bert", "xlnet"]
+                    # else None,
                     "labels": batch[3],
                 }
+
                 outputs = model(**inputs)
-                loss = outputs[
-                    0
-                ]  # model outputs are always tuple in pytorch-transformers (see doc)
+                loss = outputs[0]
+                print_gpu_info(0.3)
 
                 if tp.n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -151,9 +161,6 @@ class ExperimentBaseModel:
 
 
 class PretrainedExperimentModel(ExperimentBaseModel):
-    _hparams = {"tokenizer": {"max_length": 512}, "model": {}, "runner": {"batch_size": 100}}
-    _tparams = {"loader": {"shuffle": False, "num_workers": 1, "batch_size": 2}}
-
     def __init__(self, base_model, processor):
         super().__init__()
         self.base_model = base_model
@@ -161,16 +168,17 @@ class PretrainedExperimentModel(ExperimentBaseModel):
         self.num_labels = len(processor.label_encoder.classes_)
 
     def get_default_hparams(self):
-        return {}
+        return {"max_seq_len": 128}
 
     def get_default_tparams(self):
         return {
-            "batch_size": 1,
-            "max_steps": 5,
+            "batch_size": 256,
+            "max_steps": 100,
             "weight_decay": 0.0,
             "adam_epsilon": 1e-8,
             "learning_rate": 5e-5,
             "fp16": False,
+            "fp16_opt_level": "O1",
             "max_grad_norm": 1.0,
             "warmup_steps": 100,
             "n_gpu": 1,
