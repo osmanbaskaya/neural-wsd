@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2dd2c0cad97dc48a590ffc58d84a24d4534796ce7646d6582efb96d976c6f4af"
+            "sha256": "48eade19088d31ed916b84b0610e72e82e8165bb717c70127b37c837d7a98d6c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -205,6 +205,10 @@
                 "sha256:92b8c4b06dac4f0611c0729b2f2ede52b2e1bac1ab48f089c7ddc12e26bb60c4"
             ],
             "version": "==7.2.0"
+        },
+        "neural-wsd": {
+            "editable": true,
+            "path": "."
         },
         "nodeenv": {
             "hashes": [

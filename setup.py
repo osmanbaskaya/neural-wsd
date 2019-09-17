@@ -1,6 +1,12 @@
 from setuptools import setup, find_packages
 
 setup(
+    name="neural-wsd",
+    packages=find_packages("neural_wsd"),
+    package_dir={"": "neural_wsd"},
+    author="Osman Baskaya",
+    author_email="osmanbaskaya1@gmail.com",
+    version="0.1",
     dependency_links=[],
     install_requires=[
         "appdirs==1.4.3",
@@ -57,10 +63,4 @@ setup(
         "wcwidth==0.1.7",
         "zipp==0.6.0",
     ],
-    name="neural-wsd",
-    author="Osman Baskaya",
-    author_email="osmanbaskaya1@gmail.com",
-    version="0.1dev",
-    packages=find_packages("neural_wsd"),
-    package_dir={"": "neural_wsd"},
 )

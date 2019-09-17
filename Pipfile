@@ -21,6 +21,7 @@ PyYAML = "*"
 black = "*"
 pre-commit = "*"
 neural-wsd = {editable = true,path = "."}
+setuptools = "*"
 
 [requires]
 python_version = "3.7"
