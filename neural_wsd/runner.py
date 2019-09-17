@@ -30,7 +30,7 @@ def run():
     tparams = {"batch_size": 320}
 
     model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
-    model.train(datasets["tsv"], datasets["ts"])
+    model.train(datasets["tsv"])
     print(model.predict(["Bass likes warm waters.", "Bass music is great"]))
     model.save()
 

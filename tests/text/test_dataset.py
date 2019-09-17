@@ -7,15 +7,17 @@ from neural_wsd.text.dataset import WikiWordSenseDisambiguationDataset, sample_d
 @pytest.fixture
 def dataset():
     size = 11
-    data = pd.DataFrame(
-        {
-            "text": ["here is a sentence"] * size,
-            "sense": [0] * size,
-            "offset": [2] * size,
-            "word": ["here"] * size,
-            "id": list(range(size)),
-        }
-    )
+    data = [
+        list(range(size)),  # id
+        ["bank"] * size,  # target word
+        [0] * size,  # offset
+        [2] * size,  # label / sense
+        ["here is a sentence"] * size,  # annotated sentence (<target>target_word<target>)
+        ["here is a sentence"] * size,  # tokenized sentence
+        ["here is a sentence"] * size,  # original sentence
+    ]
+
+    data = zip(*data)
     return WikiWordSenseDisambiguationDataset(data=data)
 
 

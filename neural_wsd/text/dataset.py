@@ -94,7 +94,7 @@ class WikiWordSenseDisambiguationDataset(WordSenseDisambiguationDataset):
         labels = set()
         for d in data:
             e = WikiWordSenseDisambiguationDataset.Example(
-                id=int(d[0]),
+                id=d[0],
                 target_word=d[1],
                 offset=int(d[2]),
                 label=d[3],
