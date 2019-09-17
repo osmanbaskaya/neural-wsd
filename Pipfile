@@ -6,15 +6,20 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-pandas = "*"
-pytorch-transformers = "*"
+toolz = "*"
 torch = "*"
+pandas = "*"
+tqdm = "*"
+numpy = "*"
+pytorch-transformers = "*"
+typing = "*"
+pytest = "*"
+dill = "*"
 scikit-learn = "*"
 Keras = "*"
+PyYAML = "*"
 black = "*"
-pytest = "*"
-tensorflow = "*"
-tqdm = "*"
+pre-commit = "*"
 
 [requires]
 python_version = "3.7"
