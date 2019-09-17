@@ -104,4 +104,3 @@ class WikiWordSenseDisambiguationDataset(WordSenseDisambiguationDataset):
             labels.add(e.label)
 
         return examples, labels
-

@@ -8,5 +8,6 @@ toolz
 torch
 dill
 scikit_learn
+pre-commit
 typing
 PyYAML

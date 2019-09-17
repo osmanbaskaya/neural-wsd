@@ -56,11 +56,10 @@ class ExperimentBaseModel:
 
         return {k: v.to(self.device) for k, v in inputs.items()}
 
-    def train(self, train_dataset, validation_dataset):
+    def train(self, train_dataset):
         LOGGER.info(f"Device: {self.device}")
 
         tp = self.tparams
-        hp = self.hparams
         self.model = self._get_model().to(self.device)
         total_params = total_num_of_params(self.model.named_parameters())
 
@@ -110,7 +109,8 @@ class ExperimentBaseModel:
         #     model = torch.nn.DataParallel(model)
 
         global_step = 0
-        tr_loss, logging_loss = 0.0, 0.0
+        # tr_loss, logging_loss = 0.0, 0.0
+        tr_loss = 0.0
         self.model.zero_grad()
         train_iterator = trange(int(num_train_epochs), desc="Epoch")
         print("\n\n GPU Memory before training starts.\n")
@@ -174,7 +174,7 @@ class ExperimentBaseModel:
         raise NotImplementedError()
 
     def save(self):
-        torch.save(self.model, 'model.pkl', pickle_module=dill)
+        torch.save(self.model, "model.pkl", pickle_module=dill)
 
     def load(self):
         pass
