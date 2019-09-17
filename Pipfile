@@ -20,6 +20,7 @@ Keras = "*"
 PyYAML = "*"
 black = "*"
 pre-commit = "*"
+neural-wsd = {editable = true,path = "."}
 
 [requires]
 python_version = "3.7"
