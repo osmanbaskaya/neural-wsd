@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from neural_wsd.text.dataset import WikiWordSenseDisambiguationDataset, sample_data
+from neural_wsd.text.dataset import sample_data
+from neural_wsd.text.dataset import WikiWordSenseDisambiguationDataset
 
 
 @pytest.fixture

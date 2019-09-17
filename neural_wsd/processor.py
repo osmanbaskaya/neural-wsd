@@ -2,21 +2,20 @@ import logging
 import os
 from collections import OrderedDict
 from collections.abc import Iterable
+from itertools import cycle
 from typing import NamedTuple
 
 import dill
 import torch
-from itertools import cycle
 from sklearn.preprocessing import LabelEncoder
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset
 
 from .text.dataset import WikiWordSenseDisambiguationDataset
-from .text.transformers import (
-    PreTrainedModelTokenize,
-    BasicTextTransformer,
-    PipelineRunner,
-    PaddingTransformer,
-)
+from .text.transformers import BasicTextTransformer
+from .text.transformers import PaddingTransformer
+from .text.transformers import PipelineRunner
+from .text.transformers import PreTrainedModelTokenize
 from .utils import merge_params
 
 LOGGER = logging.getLogger(__name__)

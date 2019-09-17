@@ -5,12 +5,18 @@ from collections import namedtuple
 
 import dill
 import torch
-from pytorch_transformers import AdamW, WarmupLinearSchedule
-from pytorch_transformers import AutoModelForSequenceClassification, AutoConfig
-from torch.utils.data import DataLoader, RandomSampler
-from tqdm import trange, tqdm
+from pytorch_transformers import AdamW
+from pytorch_transformers import AutoConfig
+from pytorch_transformers import AutoModelForSequenceClassification
+from pytorch_transformers import WarmupLinearSchedule
+from torch.utils.data import DataLoader
+from torch.utils.data import RandomSampler
+from tqdm import tqdm
+from tqdm import trange
 
-from ..utils import merge_params, print_gpu_info, total_num_of_params
+from ..utils import merge_params
+from ..utils import print_gpu_info
+from ..utils import total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
 

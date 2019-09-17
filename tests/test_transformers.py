@@ -1,4 +1,5 @@
-from neural_wsd.text.transformers import BasicTextTransformer, PaddingTransformer
+from neural_wsd.text.transformers import BasicTextTransformer
+from neural_wsd.text.transformers import PaddingTransformer
 
 
 def test_lowercase_op():

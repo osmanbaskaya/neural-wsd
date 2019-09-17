@@ -3,12 +3,12 @@ import random
 import subprocess
 from functools import reduce
 from pprint import pprint
+from time import sleep
 
 import numpy as np
 import toolz
 import torch
 import yaml
-from time import sleep
 
 SEED = 42
 LOGGER = logging.getLogger(__name__)

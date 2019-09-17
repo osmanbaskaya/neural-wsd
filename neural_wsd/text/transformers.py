@@ -1,11 +1,12 @@
 import multiprocessing
-from sklearn.preprocessing import LabelEncoder
 from copy import deepcopy
-from typing import NamedTuple
-import torch
 from itertools import cycle
+from typing import NamedTuple
+
+import torch
 from keras.preprocessing.sequence import pad_sequences
 from pytorch_transformers import AutoTokenizer
+from sklearn.preprocessing import LabelEncoder
 
 
 # ---------------- Feature Transformers -------------------

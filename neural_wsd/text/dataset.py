@@ -1,11 +1,11 @@
 import csv
-from typing import NamedTuple
 import glob
 import logging
+import math
 import random
 from abc import abstractmethod
+from typing import NamedTuple
 
-import math
 import torch.utils.data
 from torch.utils.data.sampler import SubsetRandomSampler
 
