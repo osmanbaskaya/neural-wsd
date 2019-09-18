@@ -1,7 +1,6 @@
 # coding=utf-8
 import logging
 from abc import abstractmethod
-from collections import namedtuple
 
 import dill
 import torch
@@ -10,12 +9,11 @@ from pytorch_transformers import AutoConfig
 from pytorch_transformers import AutoModelForSequenceClassification
 from pytorch_transformers import WarmupLinearSchedule
 from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
-from tqdm import tqdm
-from tqdm import trange
+from tqdm.auto import tqdm
+from tqdm.auto import trange
 
+from ..text.dataset import sample_data
 from ..utils import merge_params
-from ..utils import print_gpu_info
 from ..utils import total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
@@ -33,15 +31,11 @@ class ExperimentBaseModel:
 
     @property
     def hparams(self):
-        return namedtuple(f"{self.__class__.__name__}_hparams", sorted(self._hparams))(
-            **self._hparams
-        )
+        return self._hparams
 
     @property
     def tparams(self):
-        return namedtuple(f"{self.__class__.__name__}_tparams", sorted(self._tparams))(
-            **self._tparams
-        )
+        return self._tparams
 
     def get_default_hparams(self):
         raise NotImplementedError()
@@ -62,98 +56,94 @@ class ExperimentBaseModel:
 
         return {k: v.to(self.device) for k, v in inputs.items()}
 
-    def train(self, train_dataset):
-        LOGGER.info(f"Device: {self.device}")
-
-        tp = self.tparams
-        self.model = self._get_model().to(self.device)
-        total_params = total_num_of_params(self.model.named_parameters())
-
-        print(self.model)
-
-        LOGGER.info(f"Total number of params for {self.base_model_arch}: {total_params}")
-
-        train_sampler = RandomSampler(train_dataset)
-        train_dataloader = DataLoader(
-            train_dataset, sampler=train_sampler, batch_size=tp.batch_size
-        )
-
-        LOGGER.info(f"Batch size: {tp.batch_size}")
-
-        t_total = tp.max_steps
-        num_train_epochs = tp.max_steps // len(train_dataloader) + 1
-
-        # Prepare optimizer and schedule (linear warmup and decay)
+    @staticmethod
+    def get_params_to_optimize(model, weight_decay, optimize_pretrained_model):
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
-            # {
-            # "params": [
-            #     p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)
-            # ],
-            # "weight_decay": tp.weight_decay,
-            # },
             {
                 "params": [
-                    p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)
+                    p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": 0.0,
             }
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=tp.learning_rate, eps=tp.adam_epsilon)
-        scheduler = WarmupLinearSchedule(optimizer, warmup_steps=tp.warmup_steps, t_total=t_total)
-        if tp.fp16:
-            try:
-                from apex import amp
-            except ImportError:
-                raise ImportError(
-                    "Please install apex from https://www.github.com/nvidia/apex to use fp16 training."
-                )
-            model, optimizer = amp.initialize(self.model, optimizer, opt_level=tp.fp16_opt_level)
 
-        # # multi-gpu training (should be after apex fp16 initialization)
-        # if tp.n_gpu > 1:
-        #     model = torch.nn.DataParallel(model)
+        if optimize_pretrained_model:
+            optimizer_grouped_parameters.append(
+                {
+                    "params": [
+                        p
+                        for n, p in model.named_parameters()
+                        if not any(nd in n for nd in no_decay)
+                    ],
+                    "weight_decay": weight_decay,
+                }
+            )
+
+        return optimizer_grouped_parameters
+
+    def train(self, train_dataset):
+        LOGGER.info(f"Training will be on: {self.device}")
+
+        tp = self.tparams
+
+        self.model = self._get_model().to(self.device)
+
+        LOGGER.debug(self.model)
+        total_params = total_num_of_params(self.model.named_parameters())
+        LOGGER.info(f"Total number of params for {self.base_model_arch}: {total_params}")
+
+        train_sampler, validation_sampler = sample_data(train_dataset, 0.9, shuffle=False)
+        train_dataloader = DataLoader(train_dataset, tp["batch_size"], sampler=train_sampler)
+        validation_sampler = DataLoader(train_dataset, tp["batch_size"], sampler=validation_sampler)
+
+        t_total = self.tparams["max_steps"]
+        num_train_epochs = tp["max_steps"] // len(train_dataloader) + 1
+
+        # Prepare optimizer and schedule (linear warmup and decay)
+        optimizer_grouped_parameters = self.get_params_to_optimize(
+            self.model, tp["weight_decay"], tp["optimize_pretrained_model"]
+        )
+
+        optimizer = self.get_optimizer(optimizer_grouped_parameters)
+        scheduler = self.get_scheduler(optimizer, t_total, tp["warmup_steps"])
 
         global_step = 0
-        # tr_loss, logging_loss = 0.0, 0.0
         tr_loss = 0.0
         self.model.zero_grad()
-        train_iterator = trange(int(num_train_epochs), desc="Epoch")
-        print("\n\n GPU Memory before training starts.\n")
-        print_gpu_info()
-        for _ in train_iterator:
-            epoch_iterator = tqdm(train_dataloader, desc="Iteration")
-            for step, batch in enumerate(epoch_iterator):
-                self.model.train()
-                inputs = self._prepare_batch_input(batch)
-                outputs = self.model(**inputs)
-                loss = outputs[0]
-                print_gpu_info(0.3)
-
-                if tp.n_gpu > 1:
-                    loss = loss.mean()  # mean() to average on multi-gpu parallel training
-                if tp.fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), tp.max_grad_norm)
-                else:
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), tp.max_grad_norm)
-
-                tr_loss += loss.item()
-                scheduler.step()  # Update learning rate schedule
-                optimizer.step()
-                self.model.zero_grad()
-                global_step += 1
-
-                if 0 < tp.max_steps < global_step:
-                    epoch_iterator.close()
-                    break
-                if 0 < tp.max_steps < global_step:
-                    train_iterator.close()
-                    break
+        for _ in trange(num_train_epochs, desc="epoch"):
+            self.model.train()
+            loss_for_epoch, num_of_steps = self._train_loop(train_dataloader, optimizer, scheduler)
+            # self.model.eval()
+            # loss_for_epoch, num_of_steps = self._train_loop(train_dataloader, optimizer, scheduler)
 
         return global_step, tr_loss / global_step
+
+    def get_optimizer(self, grouped_params):
+        optimizer = self.tparams["optimizer"]["optimizer"]
+        opt_params = self.tparams["optimizer"]["params"]
+        return optimizer(grouped_params, **opt_params)
+
+    def get_scheduler(self, optimizer, t_total, warmup_steps):
+        return WarmupLinearSchedule(optimizer, warmup_steps=warmup_steps, t_total=t_total)
+
+    def _train_loop(self, dataloader, optimizer=None, scheduler=None):
+        total_loss = 0
+        num_of_steps = 0
+        for step, batch in enumerate(tqdm(dataloader, desc="batch")):
+            inputs = self._prepare_batch_input(batch)
+            outputs = self.model(**inputs)
+            loss = outputs[0]
+
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.tparams["max_grad_norm"])
+            total_loss += loss.item()
+            optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
+            self.model.zero_grad()
+            num_of_steps += 1
+        return total_loss, num_of_steps
 
     def predict(self, sentences):
         predictions = self._predict(sentences)
@@ -165,10 +155,10 @@ class ExperimentBaseModel:
 
         data = self.processor.transform(sentences)
         with torch.no_grad():
+            self.model.eval()
             tensor_data = self.processor.create_tensor_data(data, labels_available=False)
             pred_iter = map(
-                self._prepare_batch_input,
-                DataLoader(tensor_data, batch_size=self.tparams.batch_size),
+                self._prepare_batch_input, DataLoader(tensor_data, self.tparams.batch_size)
             )
             return torch.cat(tensors=[self.model(**batch)[0] for batch in pred_iter]).cpu().numpy()
 
@@ -205,13 +195,13 @@ class PretrainedExperimentModel(ExperimentBaseModel):
             "batch_size": 512,
             "max_steps": 100,
             "weight_decay": 0.0,
-            "adam_epsilon": 1e-8,
-            "learning_rate": 5e-5,
             "fp16": False,
             "fp16_opt_level": "O1",
             "max_grad_norm": 1.0,
             "warmup_steps": 100,
             "n_gpu": 1,
+            "optimize_pretrained_model": False,
+            "optimizer": {"optimizer": AdamW, "params": {"lr": 5e-5, "eps": 1e-8}},
         }
 
     def _get_model(self):

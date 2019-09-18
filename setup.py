@@ -59,6 +59,7 @@ setup(
         "torch==1.2.0",
         "tqdm==4.35.0",
         "typing==3.7.4.1",
+        "unidecode==1.1.1",
         "urllib3==1.25.3; python_version >= '3.4'",
         "virtualenv==16.7.5",
         "wcwidth==0.1.7",

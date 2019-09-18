@@ -18,9 +18,14 @@ def test_padding_op_correct():
 
 
 def test_asciify_correct():
+    # Todo (kerem, osman): add more text cases, especially for English.
     assert asciify("Ślusàrski") == "Slusarski"
     assert asciify("kierowców") == "kierowcow"
     assert (
         asciify("Sıfır noktasındayız. Olayın şerefine bir konuşma yapacak mısın?") == "Sifir "
         "noktasindayiz. Olayin serefine bir konusma yapacak misin?"
+    )
+    assert (
+        asciify("Here is some text that shouldn't be changed.") == "Here is some text that "
+        "shouldn't be changed."
     )

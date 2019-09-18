@@ -4,6 +4,7 @@
         - refactoring training
         - adding validation part.
         - how to save network partially - only the trained weights?
+        - divide the model.
 ### offline-wiki related:
     - kerem
         - data analysis - how long are the sentences? Some plots would be good. Perhaps a barplot (x axis target words, y axis avg. # of words for a target word)
