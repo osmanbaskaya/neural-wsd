@@ -22,6 +22,7 @@ black = "*"
 pre-commit = "*"
 neural-wsd = {editable = true,path = "."}
 setuptools = "*"
+unidecode = "*"
 
 [requires]
 python_version = "3.7"

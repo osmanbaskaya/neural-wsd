@@ -1,12 +1,27 @@
 import multiprocessing
+import string
+import unicodedata
 from copy import deepcopy
 from itertools import cycle
-from typing import NamedTuple
 
-import torch
 from keras.preprocessing.sequence import pad_sequences
 from pytorch_transformers import AutoTokenizer
-from sklearn.preprocessing import LabelEncoder
+from unidecode import unidecode
+
+ALL_LETTERS = string.ascii_letters + " .,;'"
+
+
+# Turn a Unicode string to plain ASCII, thanks to https://stackoverflow.com/a/518232/2809427
+def remove_accents(s):
+    return "".join(
+        c
+        for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn" and c in ALL_LETTERS
+    )
+
+
+def asciify(s):
+    return unidecode(s)
 
 
 # ---------------- Feature Transformers -------------------
@@ -137,14 +152,18 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
 
 class BasicTextTransformer(StatelessBaseTransformer):
     # TODO: Add more text preprocessing operations.
-    def __init__(self, lowercase=True, **kwargs):
+    def __init__(self, to_lowercase=True, to_ascii=True, **kwargs):
         super().__init__(**kwargs)
-        self.lowercase = lowercase
+        self.to_lowercase = to_lowercase
+        self.to_ascii = to_ascii
 
     def _transform(self, data, context):
         transformed = data
-        if self.lowercase:
+
+        if self.to_lowercase:
             transformed = [sample.lower() for sample in transformed]
+        if self.to_ascii:
+            transformed = [asciify(sample) for sample in transformed]
 
         return transformed, context
 

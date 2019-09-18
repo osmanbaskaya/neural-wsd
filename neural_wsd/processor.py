@@ -138,7 +138,7 @@ class WikiWordSenseDataProcessor:
     def _get_data_pipeline(self):
         # Todo: many hardcoded stuff here.
         max_seq_len = self.hparams["tokenizer"]["max_seq_len"]
-        lowercase_op = BasicTextTransformer(name="text-tr", lowercase=True)
+        lowercase_op = BasicTextTransformer(name="text-tr", to_lowercase=True, to_ascii=True)
         tokenizer_op = PreTrainedModelTokenize(
             name="tokenizer", base_model=self.base_model, **self.hparams["tokenizer"]
         )
