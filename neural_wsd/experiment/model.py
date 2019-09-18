@@ -114,6 +114,9 @@ class ExperimentBaseModel:
         for _ in trange(num_train_epochs, desc="epoch"):
             self.model.train()
             loss_for_epoch, num_of_steps = self._train_loop(train_dataloader, optimizer, scheduler)
+            global_step += num_of_steps
+            tr_loss += loss_for_epoch
+
             # self.model.eval()
             # loss_for_epoch, num_of_steps = self._train_loop(train_dataloader, optimizer, scheduler)
 
@@ -158,7 +161,7 @@ class ExperimentBaseModel:
             self.model.eval()
             tensor_data = self.processor.create_tensor_data(data, labels_available=False)
             pred_iter = map(
-                self._prepare_batch_input, DataLoader(tensor_data, self.tparams.batch_size)
+                self._prepare_batch_input, DataLoader(tensor_data, self.tparams["batch_size"])
             )
             return torch.cat(tensors=[self.model(**batch)[0] for batch in pred_iter]).cpu().numpy()
 
