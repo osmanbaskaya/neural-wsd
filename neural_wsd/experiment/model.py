@@ -17,6 +17,7 @@ from ..utils import merge_params
 from ..utils import total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.disabled = False
 
 
 class ExperimentBaseModel:
@@ -135,7 +136,8 @@ class ExperimentBaseModel:
 
             # TODO Checkpoint logic is missing.
             if epoch % self.tparams["evaluate_every_n_epoch"] == 0:
-                valid_set_loss = self._eval_loop(validation_loader)
+                valid_set_loss, validation_accuracy = self._eval_loop(validation_loader)
+                print(f"Validation Epoch accuracy: {validation_accuracy}")
                 if best_validation_loss > valid_set_loss:
                     LOGGER.info(
                         f"Validation loss is decreased from {best_validation_loss} to "
@@ -177,7 +179,7 @@ class ExperimentBaseModel:
         total_loss = 0
         num_step = 0
         accuracy = 0
-        for num_step, batch in enumerate(data_loader):
+        for num_step, batch in enumerate(data_loader, 1):
             inputs = self._prepare_batch_input(batch)
             outputs = self.model(**inputs)
             loss, logits = outputs[:2]
@@ -193,17 +195,19 @@ class ExperimentBaseModel:
 
             self.model.zero_grad()
 
-        return total_loss, num_step, accuracy / float(num_step)
+        return total_loss, num_step, accuracy / len(data_loader)
 
     def _eval_loop(self, data_loader):
         self.model.eval()
         total_loss = 0.0
-        for num_step, batch in enumerate(data_loader):
+        accuracy = 0
+        for num_step, batch in enumerate(data_loader, 1):
             inputs = self._prepare_batch_input(batch)
-            loss = self.model(**inputs)[0]
+            loss, logits = self.model(**inputs)[:2]
             total_loss += loss.item()
+            accuracy += self.accuracy(logits, inputs["labels"]).item()
 
-        return total_loss
+        return total_loss, accuracy / len(data_loader)
 
     def predict(self, sentences):
         self.model.eval()
