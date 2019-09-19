@@ -30,17 +30,16 @@ def get_data(processor):
     return datasets
 
 
-def get_model(batch_size, processor, base_model):
-    tparams = {"batch_size": batch_size}
+def get_model(processor, base_model, tparams):
     model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
     return model
 
 
-def run(max_seq_len, batch_size, base_model):
+def run(max_seq_len, base_model, tparams):
     processor = create_model_processor(max_seq_len=max_seq_len, base_model=base_model)
     datasets = get_data(processor)
 
-    model = get_model(batch_size, processor, base_model)
+    model = get_model(processor, base_model, tparams)
     global_step, training_loss = model.train(datasets["tsv"])
 
     sentences = ["Bass likes warm waters.", "Bass music is great"]
@@ -56,14 +55,17 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Process some integers.")
-    parser.add_argument("--max_seq_len", default=64, type=int)
-    parser.add_argument("--batch_size", default=256, type=int)
-    parser.add_argument("--base_model", default=BASE_MODEL, type=str)
+    parser.add_argument("--max-seq-len", default=64, type=int)
+    parser.add_argument("--batch-size", default=256, type=int)
+    parser.add_argument("--max-steps", default=100, type=int)
+    parser.add_argument("--base-model", default=BASE_MODEL, type=str)
     args = parser.parse_args()
 
     LOGGER.info(f"{args}")
 
-    run(args.max_seq_len, args.batch_size, args.base_model)
+    tparams = {"batch_size": args.batch_size, "max_steps": args.max_steps}
+
+    run(args.max_seq_len, args.base_model, tparams)
 
 
 if __name__ == "__main__":

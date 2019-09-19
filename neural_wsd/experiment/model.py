@@ -3,6 +3,7 @@ import logging
 from abc import abstractmethod
 
 import dill
+import numpy as np
 import torch
 from pytorch_transformers import AdamW
 from pytorch_transformers import AutoConfig
@@ -10,7 +11,6 @@ from pytorch_transformers import AutoModelForSequenceClassification
 from pytorch_transformers import WarmupLinearSchedule
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-from tqdm.auto import trange
 
 from ..text.dataset import sample_data
 from ..utils import merge_params
@@ -93,9 +93,11 @@ class ExperimentBaseModel:
         total_params = total_num_of_params(self.model.named_parameters())
         LOGGER.info(f"Total number of params for {self.base_model_arch}: {total_params}")
 
-        train_sampler, validation_sampler = sample_data(train_dataset, 0.9, shuffle=False)
+        train_sampler, validation_sampler = sample_data(train_dataset, 0.9, shuffle=True)
         train_dataloader = DataLoader(train_dataset, tp["batch_size"], sampler=train_sampler)
-        validation_sampler = DataLoader(train_dataset, tp["batch_size"], sampler=validation_sampler)
+        validation_loader = DataLoader(
+            train_dataset, tp["batch_size"] * 2, sampler=validation_sampler
+        )
 
         t_total = self.tparams["max_steps"]
         num_train_epochs = tp["max_steps"] // len(train_dataloader) + 1
@@ -106,34 +108,53 @@ class ExperimentBaseModel:
         )
 
         optimizer = self.get_optimizer(optimizer_grouped_parameters)
-        scheduler = self.get_scheduler(optimizer, t_total, tp["warmup_steps"])
+        scheduler = self.get_scheduler(optimizer, t_total)
 
         global_step = 0
         tr_loss = 0.0
-        self.model.zero_grad()
-        for _ in trange(num_train_epochs, desc="epoch"):
-            self.model.train()
-            loss_for_epoch, num_of_steps = self._train_loop(train_dataloader, optimizer, scheduler)
-            global_step += num_of_steps
+        best_validation_loss = np.inf
+        patient = 0
+
+        progress = tqdm(total=t_total, desc="Epoch")
+        for epoch in range(1, num_train_epochs + 1):
+            loss_for_epoch, num_step = self._train_loop(train_dataloader, optimizer, scheduler)
+            global_step += num_step
             tr_loss += loss_for_epoch
 
-            # self.model.eval()
-            # loss_for_epoch, num_of_steps = self._train_loop(train_dataloader, optimizer, scheduler)
+            progress.update(num_step)
+
+            # TODO Checkpoint logic is missing.
+            if epoch % self.tparams["evaluate_every_n_epoch"] == 0:
+                valid_set_loss = self._eval_loop(validation_loader)
+                if best_validation_loss > valid_set_loss:
+                    patient = 0
+                    best_validation_loss = valid_set_loss
+                else:
+                    patient += 1
+
+                # Early stopping.
+                if self.tparams["patient"] <= patient:
+                    # idea: copy the most recent model to another directory.
+                    break
 
         return global_step, tr_loss / global_step
 
     def get_optimizer(self, grouped_params):
         optimizer = self.tparams["optimizer"]["optimizer"]
+
         opt_params = self.tparams["optimizer"]["params"]
         return optimizer(grouped_params, **opt_params)
 
-    def get_scheduler(self, optimizer, t_total, warmup_steps):
-        return WarmupLinearSchedule(optimizer, warmup_steps=warmup_steps, t_total=t_total)
+    def get_scheduler(self, optimizer, t_total):
+        return WarmupLinearSchedule(
+            optimizer, warmup_steps=self.tparams["warmup_steps"], t_total=t_total
+        )
 
-    def _train_loop(self, dataloader, optimizer=None, scheduler=None):
+    def _train_loop(self, data_loader, optimizer=None, scheduler=None):
+        self.model.train()
         total_loss = 0
-        num_of_steps = 0
-        for step, batch in enumerate(tqdm(dataloader, desc="batch")):
+        num_step = 0
+        for num_step, batch in enumerate(data_loader):
             inputs = self._prepare_batch_input(batch)
             outputs = self.model(**inputs)
             loss = outputs[0]
@@ -142,13 +163,26 @@ class ExperimentBaseModel:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.tparams["max_grad_norm"])
             total_loss += loss.item()
             optimizer.step()
+
             if scheduler is not None:
                 scheduler.step()
+
             self.model.zero_grad()
-            num_of_steps += 1
-        return total_loss, num_of_steps
+
+        return total_loss, num_step
+
+    def _eval_loop(self, data_loader):
+        self.model.eval()
+        total_loss = 0.0
+        for num_step, batch in enumerate(data_loader):
+            inputs = self._prepare_batch_input(batch)
+            loss = self.model(**inputs)[0]
+            total_loss += loss.item()
+
+        return total_loss
 
     def predict(self, sentences):
+        self.model.eval()
         predictions = self._predict(sentences)
         return self.processor.inverse_transform_labels(predictions.argmax(axis=1))
 
@@ -158,7 +192,6 @@ class ExperimentBaseModel:
 
         data = self.processor.transform(sentences)
         with torch.no_grad():
-            self.model.eval()
             tensor_data = self.processor.create_tensor_data(data, labels_available=False)
             pred_iter = map(
                 self._prepare_batch_input, DataLoader(tensor_data, self.tparams["batch_size"])
@@ -166,7 +199,13 @@ class ExperimentBaseModel:
             return torch.cat(tensors=[self.model(**batch)[0] for batch in pred_iter]).cpu().numpy()
 
     def evaluate(self, test_data):
-        pass
+        """
+        :param test_data:
+        :return: average loss.
+        """
+        data_loader = DataLoader(test_data, self.tparams["batch_size"], shuffle=False)
+        total_loss = self._eval_loop(data_loader)
+        return total_loss / len(test_data)
 
     @abstractmethod
     def _get_model(self):
@@ -189,6 +228,8 @@ class PretrainedExperimentModel(ExperimentBaseModel):
         self.base_model = base_model
         self.processor = processor
         self.num_labels = len(processor.label_encoder.classes_)
+        print(self.tparams)
+        print(self.tparams)
 
     def get_default_hparams(self):
         return {"max_seq_len": 128}
@@ -204,6 +245,8 @@ class PretrainedExperimentModel(ExperimentBaseModel):
             "warmup_steps": 100,
             "n_gpu": 1,
             "optimize_pretrained_model": False,
+            "evaluate_every_n_epoch": 2,
+            "patient": 10,
             "optimizer": {"optimizer": AdamW, "params": {"lr": 5e-5, "eps": 1e-8}},
         }
 
