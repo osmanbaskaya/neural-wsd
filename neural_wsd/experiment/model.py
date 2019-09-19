@@ -43,6 +43,9 @@ class ExperimentBaseModel:
     def get_default_tparams(self):
         raise NotImplementedError()
 
+    def accuracy(self):
+        pass
+
     def _prepare_batch_input(self, batch):
 
         inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
@@ -127,14 +130,26 @@ class ExperimentBaseModel:
             if epoch % self.tparams["evaluate_every_n_epoch"] == 0:
                 valid_set_loss = self._eval_loop(validation_loader)
                 if best_validation_loss > valid_set_loss:
+                    LOGGER.info(
+                        f"Validation loss is decreased from {best_validation_loss} to "
+                        f"{valid_set_loss}"
+                    )
                     patient = 0
                     best_validation_loss = valid_set_loss
                 else:
+                    LOGGER.info(
+                        f"Validation loss didn't improved. T best validation loss so far is:"
+                        f" {best_validation_loss} and the last validation loss is: {valid_set_loss}"
+                    )
                     patient += 1
 
                 # Early stopping.
                 if self.tparams["patient"] <= patient:
                     # idea: copy the most recent model to another directory.
+                    LOGGER.info(
+                        f"Early stopping with patient: {patient} and with best valid "
+                        f"score {best_validation_loss}"
+                    )
                     break
 
         return global_step, tr_loss / global_step
