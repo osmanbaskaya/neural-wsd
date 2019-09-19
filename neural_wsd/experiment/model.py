@@ -43,8 +43,9 @@ class ExperimentBaseModel:
     def get_default_tparams(self):
         raise NotImplementedError()
 
-    def accuracy(self):
-        pass
+    def accuracy(self, logits, gold_labels):
+        correct = (logits.argmax(1) == gold_labels).sum().float()
+        return correct / gold_labels.size(0)
 
     def _prepare_batch_input(self, batch):
 
@@ -120,7 +121,13 @@ class ExperimentBaseModel:
 
         progress = tqdm(total=t_total, desc="Epoch")
         for epoch in range(1, num_train_epochs + 1):
-            loss_for_epoch, num_step = self._train_loop(train_dataloader, optimizer, scheduler)
+            loss_for_epoch, num_step, accuracy = self._train_loop(
+                train_dataloader, optimizer, scheduler
+            )
+
+            LOGGER.info(f"Epoch accuracy: {accuracy}")
+            print(f"Epoch accuracy: {accuracy}")
+
             global_step += num_step
             tr_loss += loss_for_epoch
 
@@ -169,10 +176,12 @@ class ExperimentBaseModel:
         self.model.train()
         total_loss = 0
         num_step = 0
+        accuracy = 0
         for num_step, batch in enumerate(data_loader):
             inputs = self._prepare_batch_input(batch)
             outputs = self.model(**inputs)
-            loss = outputs[0]
+            loss, logits = outputs[:2]
+            accuracy += self.accuracy(logits, inputs["labels"]).item()
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.tparams["max_grad_norm"])
@@ -184,7 +193,7 @@ class ExperimentBaseModel:
 
             self.model.zero_grad()
 
-        return total_loss, num_step
+        return total_loss, num_step, accuracy / float(num_step)
 
     def _eval_loop(self, data_loader):
         self.model.eval()
