@@ -55,20 +55,20 @@ class TokenEmbedding(nn.Module):
     def __init__(self, weighted_cls_token=True):
         super().__init__()
         self.weighted_cls_token = weighted_cls_token
+        self.device = self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def forward(self, sequence_output, wordpiece_to_token_list):
         assert len(sequence_output) == len(wordpiece_to_token_list)
 
         batch_size, max_length, hidden_size = sequence_output.shape
 
-        output = torch.zeros((batch_size, max_length, hidden_size))
+        output = torch.zeros_like(sequence_output)
+
         # Obviously this is very inefficient. Is there any way to do this in one pass without
         # blowing up memory?
         for i in range(batch_size):
-            for wp in wordpiece_to_token_list:
-                for j, word_piece_indices in enumerate(wp):
-                    for k in word_piece_indices:
-                        output[i, j, :] += sequence_output[i, k + 1, :]
+            for j, word_piece_indices in enumerate(wordpiece_to_token_list[i]):
+                output[i, j, :] = (sequence_output[i, word_piece_indices, :]).sum()
         return output
 
 

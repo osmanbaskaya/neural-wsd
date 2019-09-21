@@ -72,14 +72,21 @@ class ExperimentBaseModel:
         validation_loader = DataLoader(
             train_dataset, tp["batch_size"] * 2, sampler=validation_sampler
         )
-        # if hasattr(train_dataset, "alignments"):
-        #     train_alignments_loader = DataLoader(
-        #         train_dataset.alignments,
-        #         tp["batch_size"],
-        #         sampler=train_sampler,
-        #         collate_fn=lambda t: t,
-        #     )
-        #     train_dataloader.alignment_loader = train_alignments_loader
+        if hasattr(train_dataset, "alignments"):
+            train_alignments_loader = DataLoader(
+                train_dataset.alignments,
+                tp["batch_size"],
+                sampler=train_sampler,
+                collate_fn=lambda t: t,
+            )
+            valid_alignments_loader = DataLoader(
+                train_dataset.alignments,
+                tp["batch_size"] * 2,
+                sampler=validation_sampler,
+                collate_fn=lambda t: t,
+            )
+            train_dataloader.alignment_loader = train_alignments_loader
+            validation_loader.alignment_loader = valid_alignments_loader
         t_total = self.tparams["max_steps"]
         num_train_epochs = tp["max_steps"] // len(train_dataloader) + 1
 
@@ -155,8 +162,8 @@ class ExperimentBaseModel:
         total_loss = 0
         num_step = 0
         accuracy = 0
-        # for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
-        for num_step, batch in enumerate(data_loader, 1):
+        for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
+            # for num_step, batch in enumerate(data_loader, 1):
             inputs = self._prepare_batch_input(batch[0])
             outputs = self.model(**inputs, wordpiece_to_token_list=batch[1])
             loss, logits = outputs[:2]
@@ -178,9 +185,10 @@ class ExperimentBaseModel:
         self.model.eval()
         total_loss = 0.0
         accuracy = 0
-        for num_step, batch in enumerate(data_loader, 1):
-            inputs = self._prepare_batch_input(batch)
-            loss, logits = self.model(**inputs)[:2]
+        for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
+            # for num_step, batch in enumerate(data_loader, 1):
+            inputs = self._prepare_batch_input(batch[0])
+            loss, logits = self.model(**inputs, wordpiece_to_token_list=batch[1])[:2]
             total_loss += loss.item()
             accuracy += self.accuracy(logits, inputs["labels"]).item()
 

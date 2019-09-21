@@ -1,10 +1,12 @@
 import logging
 
-from .experiment.model import PretrainedExperimentModel
 from .processor import load_data
 from .processor import ProcessorFactory
+from .processor import WikiTokenBaseProcessor
 from .processor import WikiWordSenseDataProcessor
 from .utils import configure_logger
+from neural_wsd.model.base import PretrainedExperimentModel
+from neural_wsd.model.transformer_based_models import RobertaTokenModel
 
 configure_logger()
 LOGGER = logging.getLogger(__name__)
@@ -18,7 +20,8 @@ dataset_directory = "dataset"
 def create_model_processor(max_seq_len, base_model, force_create=False):
     processor_params = {"hparams": {"tokenizer": {"max_seq_len": max_seq_len}}}
     processor = ProcessorFactory.get_or_create(
-        WikiWordSenseDataProcessor,
+        # WikiWordSenseDataProcessor,
+        WikiTokenBaseProcessor,
         force_create=force_create,
         cache_dir=cache_dir,
         base_model=base_model,
@@ -37,7 +40,8 @@ def get_data(processor, force_create=False):
 
 
 def get_model(processor, base_model, tparams):
-    model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
+    # model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
+    model = RobertaTokenModel(base_model, processor, tparams=tparams)
     return model
 
 

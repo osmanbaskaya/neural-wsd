@@ -181,13 +181,13 @@ class WordPieceListTransformer(StatelessBaseTransformer):
             return []
 
         all_token_list = []
-        current_token_list = [0]
+        current_token_list = [1]
         for i, token in enumerate(tokens[1:], 1):
             if not token.startswith("Ġ"):
-                current_token_list.append(i)
+                current_token_list.append(i + 1)
             else:
                 all_token_list.append(tuple(current_token_list))
-                current_token_list = [i]
+                current_token_list = [i + 1]
 
         if len(current_token_list) != 0:
             all_token_list.append(tuple(current_token_list))

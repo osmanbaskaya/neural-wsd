@@ -53,18 +53,18 @@ def test_wordpiece_to_token_correct(base_model):
     t = context["wordpiece_to_token_list"]
 
     assert [
-        (0,),
         (1,),
         (2,),
-        (3, 4, 5, 6),
-        (7, 8, 9),
-        (10, 11),
-        (12, 13),
-        (14,),
+        (3,),
+        (4, 5, 6, 7),
+        (8, 9, 10),
+        (11, 12),
+        (13, 14),
         (15,),
         (16,),
+        (17,),
     ] == t[0]
 
-    assert [(0,), (1,)] == t[1]
-    assert [(0, 1)] == t[2]
+    assert [(1,), (2,)] == t[1]
+    assert [(1, 2)] == t[2]
     assert [] == t[3]
