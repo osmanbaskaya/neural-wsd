@@ -12,9 +12,9 @@ from pytorch_transformers import WarmupLinearSchedule
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from ..text.dataset import sample_data
-from ..utils import merge_params
-from ..utils import total_num_of_params
+from neural_wsd.text.dataset import sample_data
+from neural_wsd.utils import merge_params
+from neural_wsd.utils import total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.disabled = False
@@ -72,7 +72,14 @@ class ExperimentBaseModel:
         validation_loader = DataLoader(
             train_dataset, tp["batch_size"] * 2, sampler=validation_sampler
         )
-
+        # if hasattr(train_dataset, "alignments"):
+        #     train_alignments_loader = DataLoader(
+        #         train_dataset.alignments,
+        #         tp["batch_size"],
+        #         sampler=train_sampler,
+        #         collate_fn=lambda t: t,
+        #     )
+        #     train_dataloader.alignment_loader = train_alignments_loader
         t_total = self.tparams["max_steps"]
         num_train_epochs = tp["max_steps"] // len(train_dataloader) + 1
 
@@ -148,9 +155,10 @@ class ExperimentBaseModel:
         total_loss = 0
         num_step = 0
         accuracy = 0
+        # for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
         for num_step, batch in enumerate(data_loader, 1):
-            inputs = self._prepare_batch_input(batch)
-            outputs = self.model(**inputs)
+            inputs = self._prepare_batch_input(batch[0])
+            outputs = self.model(**inputs, wordpiece_to_token_list=batch[1])
             loss, logits = outputs[:2]
             accuracy += self.accuracy(logits, inputs["labels"]).item()
 
@@ -247,8 +255,12 @@ class PretrainedExperimentModel(ExperimentBaseModel):
             "optimizer": {"optimizer": AdamW, "params": {"lr": 5e-5, "eps": 1e-8}},
         }
 
-    def _get_model(self):
+    def _get_config(self):
         config = AutoConfig.from_pretrained(self.base_model, num_labels=self.num_labels)
+        return config
+
+    def _get_model(self):
+        config = self._get_config()
         return AutoModelForSequenceClassification.from_pretrained(self.base_model, config=config)
 
     @property
