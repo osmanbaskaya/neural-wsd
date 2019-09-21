@@ -49,43 +49,12 @@ class ExperimentBaseModel:
         return correct / gold_labels.size(0)
 
     def _prepare_batch_input(self, batch):
-
-        inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
-
-        # XLM and RoBERTa don't use segment_ids
-        if self.base_model_arch in ["bert", "xlnet"]:
-            inputs["token_type_ids"] = batch[2]
-
-        if len(batch) == 4:
-            inputs["labels"] = batch[3]
-
-        return {k: v.to(self.device) for k, v in inputs.items()}
+        raise NotImplementedError()
 
     @staticmethod
+    @abstractmethod
     def get_params_to_optimize(model, weight_decay, optimize_pretrained_model):
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            }
-        ]
-
-        if optimize_pretrained_model:
-            optimizer_grouped_parameters.append(
-                {
-                    "params": [
-                        p
-                        for n, p in model.named_parameters()
-                        if not any(nd in n for nd in no_decay)
-                    ],
-                    "weight_decay": weight_decay,
-                }
-            )
-
-        return optimizer_grouped_parameters
+        raise NotImplementedError()
 
     def train(self, train_dataset):
         LOGGER.info(f"Training will be on: {self.device}")
@@ -285,3 +254,42 @@ class PretrainedExperimentModel(ExperimentBaseModel):
     @property
     def base_model_arch(self):
         return self.base_model.split("-")[0]
+
+    def _prepare_batch_input(self, batch):
+
+        inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
+
+        # XLM and RoBERTa don't use segment_ids
+        if self.base_model_arch in ["bert", "xlnet"]:
+            inputs["token_type_ids"] = batch[2]
+
+        if len(batch) == 4:
+            inputs["labels"] = batch[3]
+
+        return {k: v.to(self.device) for k, v in inputs.items()}
+
+    @staticmethod
+    def get_params_to_optimize(model, weight_decay, optimize_pretrained_model):
+        no_decay = ["bias", "LayerNorm.weight"]
+        optimizer_grouped_parameters = [
+            {
+                "params": [
+                    p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": weight_decay,
+            }
+        ]
+
+        if optimize_pretrained_model:
+            optimizer_grouped_parameters.append(
+                {
+                    "params": [
+                        p
+                        for n, p in model.named_parameters()
+                        if not any(nd in n for nd in no_decay)
+                    ],
+                    "weight_decay": 0.0,
+                }
+            )
+
+        return optimizer_grouped_parameters

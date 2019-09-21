@@ -23,6 +23,7 @@ pre-commit = "*"
 neural-wsd = {editable = true,path = "."}
 setuptools = "*"
 unidecode = "*"
+wasabi = "*"
 
 [requires]
 python_version = "3.7"

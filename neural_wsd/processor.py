@@ -66,10 +66,14 @@ class WikiWordSenseDataProcessor:
     def tparams(self):
         return self._tparams
 
-    def _create_examples(self, transformed_data, attention_masks, labels=None):
+    def _create_examples(
+        self, transformed_data, attention_masks, labels=None, wordpiece_token=None
+    ):
         features = []
         if labels is None:
             labels = cycle([None])
+
+        # TODO add wordpiece_token info here and check how it incorporates with training.
 
         for input_ids, mask, label in zip(transformed_data, attention_masks, labels):
             features.append(
@@ -94,9 +98,7 @@ class WikiWordSenseDataProcessor:
         labels = self.label_encoder.fit_transform(labels)
 
         self.data_pipeline = self._get_data_pipeline()
-        transformed_data, context = self.data_pipeline.fit_transform(examples)
-        attention_masks = context["mask"]
-        return self._create_examples(transformed_data, attention_masks, labels)
+        return self.transform(examples, labels)
 
     def fit(self, examples, labels):
         return self.fit_transform(examples, labels)
@@ -110,7 +112,10 @@ class WikiWordSenseDataProcessor:
 
         transformed_data, context = self.data_pipeline.fit_transform(examples)
         attention_masks = context["mask"]
-        return self._create_examples(transformed_data, attention_masks, labels)
+
+        wordpiece_token = context.get("wordpiece_to_token_list", None)
+
+        return self._create_examples(transformed_data, attention_masks, labels, wordpiece_token)
 
     def transform_labels(self, y):
         if not isinstance(y, list):
