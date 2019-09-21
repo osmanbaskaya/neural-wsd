@@ -16,7 +16,7 @@ from .text.transformers import BasicTextTransformer
 from .text.transformers import PaddingTransformer
 from .text.transformers import PipelineRunner
 from .text.transformers import PreTrainedModelTokenize
-from .text.transformers import WordpieceToTokenTransformer
+from .text.transformers import WordPieceListTransformer
 from .utils import merge_params
 
 LOGGER = logging.getLogger(__name__)
@@ -27,6 +27,14 @@ class InputFeatures(NamedTuple):
     attention_mask: torch.tensor
     segment_ids: torch.tensor
     label_id: torch.tensor
+
+
+class TokenInputFeatures(NamedTuple):
+    input_ids: torch.tensor
+    attention_mask: torch.tensor
+    segment_ids: torch.tensor
+    label_id: torch.tensor
+    alignment: list
 
 
 class ProcessorFactory:
@@ -147,7 +155,7 @@ class WikiWordSenseDataProcessor:
         tokenizer_op = PreTrainedModelTokenize(
             name="tokenizer", base_model=self.base_model, **self.hparams["tokenizer"]
         )
-        wordpiece_to_token_op = WordpieceToTokenTransformer(
+        wordpiece_to_token_op = WordPieceListTransformer(
             name="wordpiece-to-token", base_model=self.base_model
         )
         padding_op = PaddingTransformer(name="padding-op", max_seq_len=max_seq_len)
@@ -228,5 +236,47 @@ def load_data(
                 features = processor.transform(examples, labels)
 
             torch.save(features, cache_fn, pickle_module=dill)
-        datasets[dataset_type] = processor.create_tensor_data(features)
+        tensor_dataset = processor.create_tensor_data(features)
+        alignments = [f.alignment for f in features]
+        tensor_dataset.alignments = alignments
+        datasets[dataset_type] = tensor_dataset
     return datasets
+
+
+class WikiTokenBaseProcessor(WikiWordSenseDataProcessor):
+    def _create_examples(self, transformed_data, attention_masks, labels=None, alignments=None):
+        features = []
+        if labels is None:
+            labels = cycle([None])
+
+        # TODO add wordpiece_token info here and check how it incorporates with training.
+
+        for input_ids, mask, label, alignment in zip(
+            transformed_data, attention_masks, labels, alignments
+        ):
+            features.append(
+                TokenInputFeatures(
+                    input_ids=input_ids,
+                    attention_mask=mask,
+                    # TODO: hack - check this if it works.
+                    segment_ids=[0] * len(mask),
+                    label_id=label,
+                    alignment=alignment,
+                )
+            )
+
+        return features
+
+    def transform(self, examples, labels=None):
+        if self.data_pipeline is None:
+            raise ValueError("You need to fit the data first")
+
+        if labels is not None:
+            labels = self.transform_labels(labels)
+
+        transformed_data, context = self.data_pipeline.fit_transform(examples)
+        attention_masks = context["mask"]
+
+        wordpiece_token = context.get("wordpiece_to_token_list", None)
+
+        return self._create_examples(transformed_data, attention_masks, labels, wordpiece_token)
