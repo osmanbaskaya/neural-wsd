@@ -29,8 +29,10 @@ def create_model_processor(max_seq_len, base_model, force_create=False):
     return processor
 
 
-def get_data(processor):
-    datasets = load_data(processor, dataset_directory, cache_dir, cached_data_fn)
+def get_data(processor, force_create=False):
+    datasets = load_data(
+        processor, dataset_directory, cache_dir, cached_data_fn, force_create=force_create
+    )
     return datasets
 
 
@@ -43,7 +45,7 @@ def run(max_seq_len, base_model, tparams, force_create=False):
     processor = create_model_processor(
         max_seq_len=max_seq_len, base_model=base_model, force_create=force_create
     )
-    datasets = get_data(processor)
+    datasets = get_data(processor, force_create)
 
     model = get_model(processor, base_model, tparams)
     global_step, training_loss = model.train(datasets["tsv"])
@@ -65,7 +67,7 @@ def main():
     parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument("--max-steps", default=100, type=int)
     parser.add_argument("--base-model", default=BASE_MODEL, type=str)
-    parser.add_argument("--force_create", default=False, type=bool)
+    parser.add_argument("--force_create", default=True, type=bool)
     args = parser.parse_args()
 
     LOGGER.info(f"{args}")

@@ -71,11 +71,11 @@ class BaseTransformer:
         if self.pool is not None:
             it = cycle(BaseTransformer._batch_iter(data, self.batch_size))
             # TODO make sure that all data is unfolded.
-            transformed = self.pool.map(self._transform, it)
+            transformed, context = self.pool.map(self._transform, it)
         else:
-            transformed = self._transform(data, context)
+            transformed, context = self._transform(data, context)
 
-        return transformed
+        return transformed, context
 
     def fit_transform(self, data, context=None):
         return self.fit(data, context).transform(data, context)
@@ -167,6 +167,10 @@ class WordpieceToTokenTransformer(StatelessBaseTransformer):
             return WordpieceToTokenTransformer._roberta_wordpiece_to_token_list
         elif model_type == "bert":
             return WordpieceToTokenTransformer._bert_wordpiece_to_token_list
+        elif model_type == "distilbert":
+            return WordpieceToTokenTransformer._distilbert_wordpiece_to_token_list
+        else:
+            raise NotImplementedError(model_type)
 
     @staticmethod
     def _roberta_wordpiece_to_token_list(tokens):
@@ -188,7 +192,11 @@ class WordpieceToTokenTransformer(StatelessBaseTransformer):
         return all_token_list
 
     @staticmethod
-    def _bert_wordpiece_to_token_list(ids, tokenizer):
+    def _bert_wordpiece_to_token_list(ids):
+        pass
+
+    @staticmethod
+    def _distilbert_wordpiece_to_token_list(ids):
         pass
 
     def _transform(self, data, context):

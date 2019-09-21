@@ -94,8 +94,7 @@ class WikiWordSenseDataProcessor:
 
     def fit_transform(self, examples, labels):
 
-        self._label_encoder = LabelEncoder()
-        labels = self.label_encoder.fit_transform(labels)
+        self._label_encoder = LabelEncoder().fit(labels)
 
         self.data_pipeline = self._get_data_pipeline()
         return self.transform(examples, labels)
@@ -201,7 +200,9 @@ class WikiWordSenseDataProcessor:
         return TensorDataset(*dataset)
 
 
-def load_data(processor, data_dir, cache_dir, cached_data_fn, dataset_types=None):
+def load_data(
+    processor, data_dir, cache_dir, cached_data_fn, dataset_types=None, force_create=False
+):
     """This method loads preprocessed data if possible. Otherwise, it fetches all the files in
     the directory regarding with dataset_type, runs the pipeline and saves the data.
     """
@@ -212,7 +213,7 @@ def load_data(processor, data_dir, cache_dir, cached_data_fn, dataset_types=None
     datasets = OrderedDict()
     for dataset_type in dataset_types:
         cache_fn = os.path.join(cache_dir, cached_data_fn)
-        if os.path.exists(cache_fn):
+        if os.path.exists(cache_fn) and not force_create:
             LOGGER.info(f"{cache_fn} is found. Reading from it.")
             features = torch.load(cache_fn, pickle_module=dill)
         else:
