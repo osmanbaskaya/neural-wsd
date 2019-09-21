@@ -16,6 +16,7 @@ from .text.transformers import BasicTextTransformer
 from .text.transformers import PaddingTransformer
 from .text.transformers import PipelineRunner
 from .text.transformers import PreTrainedModelTokenize
+from .text.transformers import WordpieceToTokenTransformer
 from .utils import merge_params
 
 LOGGER = logging.getLogger(__name__)
@@ -30,8 +31,8 @@ class InputFeatures(NamedTuple):
 
 class ProcessorFactory:
     @staticmethod
-    def get_or_create(cls, cache_dir, *args, **kwargs):
-        if cls.is_cached(cache_dir):
+    def get_or_create(cls, cache_dir, force_create=False, *args, **kwargs):
+        if cls.is_cached(cache_dir) and not force_create:
             return cls.load(cache_dir)
         else:
             LOGGER.info("Cache miss.")
@@ -142,12 +143,15 @@ class WikiWordSenseDataProcessor:
         tokenizer_op = PreTrainedModelTokenize(
             name="tokenizer", base_model=self.base_model, **self.hparams["tokenizer"]
         )
+        wordpiece_to_token_op = WordpieceToTokenTransformer(
+            name="wordpiece-to-token", base_model=self.base_model
+        )
         padding_op = PaddingTransformer(name="padding-op", max_seq_len=max_seq_len)
 
         runner = PipelineRunner(name="runner", **self.hparams["runner"])
 
         # Create the pipeline
-        runner | lowercase_op | tokenizer_op | padding_op
+        runner | lowercase_op | tokenizer_op | wordpiece_to_token_op | padding_op
 
         return runner
 

@@ -15,10 +15,14 @@ cached_data_fn = "wsd-data.pkl"
 dataset_directory = "dataset"
 
 
-def create_model_processor(max_seq_len, base_model):
+def create_model_processor(max_seq_len, base_model, force_create=False):
     processor_params = {"hparams": {"tokenizer": {"max_seq_len": max_seq_len}}}
     processor = ProcessorFactory.get_or_create(
-        WikiWordSenseDataProcessor, cache_dir=cache_dir, base_model=base_model, **processor_params
+        WikiWordSenseDataProcessor,
+        force_create=force_create,
+        cache_dir=cache_dir,
+        base_model=base_model,
+        **processor_params,
     )
     LOGGER.info(f"{processor.hparams}")
     LOGGER.info(f"{processor.tparams}")
@@ -35,8 +39,10 @@ def get_model(processor, base_model, tparams):
     return model
 
 
-def run(max_seq_len, base_model, tparams):
-    processor = create_model_processor(max_seq_len=max_seq_len, base_model=base_model)
+def run(max_seq_len, base_model, tparams, force_create=False):
+    processor = create_model_processor(
+        max_seq_len=max_seq_len, base_model=base_model, force_create=force_create
+    )
     datasets = get_data(processor)
 
     model = get_model(processor, base_model, tparams)
@@ -59,13 +65,14 @@ def main():
     parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument("--max-steps", default=100, type=int)
     parser.add_argument("--base-model", default=BASE_MODEL, type=str)
+    parser.add_argument("--force_create", default=False, type=bool)
     args = parser.parse_args()
 
     LOGGER.info(f"{args}")
 
     tparams = {"batch_size": args.batch_size, "max_steps": args.max_steps}
 
-    run(args.max_seq_len, args.base_model, tparams)
+    run(args.max_seq_len, args.base_model, tparams, args.force_create)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+# coding=utf-8
 import multiprocessing
 import string
 import unicodedata
@@ -146,6 +147,59 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
             )
             for sample in data
         ]
+
+        return data, context
+
+
+class WordpieceToTokenTransformer(StatelessBaseTransformer):
+    def __init__(self, base_model=None, add_to_context=True, **kwargs):
+        super().__init__(**kwargs)
+        self.base_model = base_model
+        self._tokenizer = AutoTokenizer.from_pretrained(base_model)
+        self.add_to_context = add_to_context
+        self.func = self.__class__._get_func(base_model)
+
+    @staticmethod
+    def _get_func(base_model):
+        model_type = base_model.split("-")[0]
+
+        if model_type == "roberta":
+            return WordpieceToTokenTransformer._roberta_wordpiece_to_token_list
+        elif model_type == "bert":
+            return WordpieceToTokenTransformer._bert_wordpiece_to_token_list
+
+    @staticmethod
+    def _roberta_wordpiece_to_token_list(tokens):
+        if len(tokens) == 0:
+            return []
+
+        all_token_list = []
+        current_token_list = [0]
+        for i, token in enumerate(tokens[1:], 1):
+            if not token.startswith("Ġ"):
+                current_token_list.append(i)
+            else:
+                all_token_list.append(tuple(current_token_list))
+                current_token_list = [i]
+
+        if len(current_token_list) != 0:
+            all_token_list.append(tuple(current_token_list))
+
+        return all_token_list
+
+    @staticmethod
+    def _bert_wordpiece_to_token_list(ids, tokenizer):
+        pass
+
+    def _transform(self, data, context):
+        wordpiece_to_token_list = [
+            self.func(self._tokenizer.convert_ids_to_tokens(ids, skip_special_tokens=True))
+            for ids in data
+        ]
+        if self.add_to_context:
+            context["wordpiece_to_token_list"] = wordpiece_to_token_list
+        else:
+            data = wordpiece_to_token_list
 
         return data, context
 

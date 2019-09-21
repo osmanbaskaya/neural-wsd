@@ -1,11 +1,13 @@
 ### neural-wsd related:
     - osman:
-        - splitting data
+        - [big] divide the model - pretrained and basic nn
+        - restructuring the project.
         - how to save network partially - only the trained weights?
         - loss calc looks wrong.
-        - [big] divide the model - pretrained and basic nn
+        - test WordPieceToTokenList Transformer
         - [big] add some sanity checks that everything works correctly.
         - [big] a general tensorboard integration.
+        - splitting data
             - perhaps instead of having one global loss, let's have array of losses. 
 ### offline-wiki related:
     - kerem
@@ -19,3 +21,5 @@
 - refactoring training
 - change batch size for evaluation.
 - adding validation part.
+- improved run script.
+- adding wordpieceToToken transformer
