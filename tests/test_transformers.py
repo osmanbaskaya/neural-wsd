@@ -5,7 +5,7 @@ from pytorch_transformers import AutoTokenizer
 from neural_wsd.text.transformers import asciify
 from neural_wsd.text.transformers import BasicTextTransformer
 from neural_wsd.text.transformers import PaddingTransformer
-from neural_wsd.text.transformers import WordpieceToTokenTransformer
+from neural_wsd.text.transformers import WordPieceListTransformer
 
 
 def test_lowercase_op():
@@ -37,7 +37,7 @@ def test_asciify_correct():
 
 @pytest.mark.parametrize("base_model", [("roberta-base")])
 def test_wordpiece_to_token_correct(base_model):
-    t = WordpieceToTokenTransformer(name="wordpiece-to-token", base_model=base_model)
+    t = WordPieceListTransformer(name="wordpiece-to-token", base_model=base_model)
     tokenizer = AutoTokenizer.from_pretrained(base_model)
 
     # Long text

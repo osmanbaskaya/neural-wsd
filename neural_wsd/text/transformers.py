@@ -141,9 +141,12 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
         )
 
     def _transform(self, data, context):
+        t = self._tokenizer
         data = [
-            self._tokenizer.encode(
-                sample[: self.max_length - self.num_of_special_tokens], add_special_tokens=True
+            t.add_special_tokens_single_sentence(
+                t.convert_tokens_to_ids(
+                    t.tokenize(sample)[: self.max_length - self.num_of_special_tokens]
+                )
             )
             for sample in data
         ]
@@ -151,7 +154,7 @@ class PreTrainedModelTokenize(StatelessBaseTransformer):
         return data, context
 
 
-class WordpieceToTokenTransformer(StatelessBaseTransformer):
+class WordPieceListTransformer(StatelessBaseTransformer):
     def __init__(self, base_model=None, add_to_context=True, **kwargs):
         super().__init__(**kwargs)
         self.base_model = base_model
@@ -164,11 +167,11 @@ class WordpieceToTokenTransformer(StatelessBaseTransformer):
         model_type = base_model.split("-")[0]
 
         if model_type == "roberta":
-            return WordpieceToTokenTransformer._roberta_wordpiece_to_token_list
+            return WordPieceListTransformer._roberta_wordpiece_to_token_list
         elif model_type == "bert":
-            return WordpieceToTokenTransformer._bert_wordpiece_to_token_list
+            return WordPieceListTransformer._bert_wordpiece_to_token_list
         elif model_type == "distilbert":
-            return WordpieceToTokenTransformer._distilbert_wordpiece_to_token_list
+            return WordPieceListTransformer._distilbert_wordpiece_to_token_list
         else:
             raise NotImplementedError(model_type)
 
