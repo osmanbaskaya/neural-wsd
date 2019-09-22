@@ -17,12 +17,16 @@ cached_data_fn = "wsd-data.pkl"
 dataset_directory = "dataset"
 
 
-def create_model_processor(max_seq_len, base_model, force_create=False):
+def create_model_processor(max_seq_len, base_model, token_based_model, ignore_cache=False):
+
+    processor_cls = WikiWordSenseDataProcessor
+    if token_based_model:
+        processor_cls = WikiTokenBaseProcessor
+
     processor_params = {"hparams": {"tokenizer": {"max_seq_len": max_seq_len}}}
     processor = ProcessorFactory.get_or_create(
-        # WikiWordSenseDataProcessor,
-        WikiTokenBaseProcessor,
-        force_create=force_create,
+        processor_cls,
+        ignore_cache=ignore_cache,
         cache_dir=cache_dir,
         base_model=base_model,
         **processor_params,
@@ -32,26 +36,33 @@ def create_model_processor(max_seq_len, base_model, force_create=False):
     return processor
 
 
-def get_data(processor, force_create=False):
+def get_data(processor, token_based_model, ignore_cache):
+    with_alignments = token_based_model
+
     datasets = load_data(
-        processor, dataset_directory, cache_dir, cached_data_fn, force_create=force_create
+        processor,
+        dataset_directory,
+        cache_dir,
+        cached_data_fn,
+        ignore_cache=ignore_cache,
+        with_alignments=with_alignments,
     )
     return datasets
 
 
-def get_model(processor, base_model, tparams):
-    # model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
-    model = RobertaTokenModel(base_model, processor, tparams=tparams)
+def get_model(processor, base_model, tparams, token_based_model):
+    if token_based_model:
+        model = RobertaTokenModel(base_model, processor, tparams=tparams)
+    else:
+        model = PretrainedExperimentModel(base_model, processor, tparams=tparams)
     return model
 
 
-def run(max_seq_len, base_model, tparams, force_create=False):
-    processor = create_model_processor(
-        max_seq_len=max_seq_len, base_model=base_model, force_create=force_create
-    )
-    datasets = get_data(processor, force_create)
+def run(max_seq_len, base_model, tparams, token_based_model, ignore_cache):
+    processor = create_model_processor(max_seq_len, base_model, token_based_model, ignore_cache)
+    datasets = get_data(processor, token_based_model, ignore_cache)
 
-    model = get_model(processor, base_model, tparams)
+    model = get_model(processor, base_model, tparams, token_based_model)
     global_step, training_loss = model.train(datasets["tsv"])
 
     sentences = ["Bass likes warm waters.", "Bass music is great"]
@@ -71,14 +82,15 @@ def main():
     parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument("--max-steps", default=100, type=int)
     parser.add_argument("--base-model", default=BASE_MODEL, type=str)
-    parser.add_argument("--force_create", default=True, type=bool)
+    parser.add_argument("--ignore-cache", action="store_true", default=False)
+    parser.add_argument("--token-based-model", action="store_true", default=False)
     args = parser.parse_args()
 
     LOGGER.info(f"{args}")
 
     tparams = {"batch_size": args.batch_size, "max_steps": args.max_steps}
 
-    run(args.max_seq_len, args.base_model, tparams, args.force_create)
+    run(args.max_seq_len, args.base_model, tparams, args.ignore_cache, args.token_based_model)
 
 
 if __name__ == "__main__":

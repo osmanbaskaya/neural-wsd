@@ -30,6 +30,7 @@ class InputFeatures(NamedTuple):
 
 
 class TokenInputFeatures(NamedTuple):
+    # Not sure why inheritance ^ doesn't work.
     input_ids: torch.tensor
     attention_mask: torch.tensor
     segment_ids: torch.tensor
@@ -39,8 +40,8 @@ class TokenInputFeatures(NamedTuple):
 
 class ProcessorFactory:
     @staticmethod
-    def get_or_create(cls, cache_dir, force_create=False, *args, **kwargs):
-        if cls.is_cached(cache_dir) and not force_create:
+    def get_or_create(cls, cache_dir, ignore_cache=False, *args, **kwargs):
+        if cls.is_cached(cache_dir) and not ignore_cache:
             return cls.load(cache_dir)
         else:
             LOGGER.info("Cache miss.")
@@ -119,10 +120,7 @@ class WikiWordSenseDataProcessor:
 
         transformed_data, context = self.data_pipeline.fit_transform(examples)
         attention_masks = context["mask"]
-
-        wordpiece_token = context.get("wordpiece_to_token_list", None)
-
-        return self._create_examples(transformed_data, attention_masks, labels, wordpiece_token)
+        return self._create_examples(transformed_data, attention_masks, labels)
 
     def transform_labels(self, y):
         if not isinstance(y, list):
@@ -209,7 +207,13 @@ class WikiWordSenseDataProcessor:
 
 
 def load_data(
-    processor, data_dir, cache_dir, cached_data_fn, dataset_types=None, force_create=False
+    processor,
+    data_dir,
+    cache_dir,
+    cached_data_fn,
+    dataset_types=None,
+    ignore_cache=False,
+    with_alignments=False,
 ):
     """This method loads preprocessed data if possible. Otherwise, it fetches all the files in
     the directory regarding with dataset_type, runs the pipeline and saves the data.
@@ -221,7 +225,7 @@ def load_data(
     datasets = OrderedDict()
     for dataset_type in dataset_types:
         cache_fn = os.path.join(cache_dir, cached_data_fn)
-        if os.path.exists(cache_fn) and not force_create:
+        if os.path.exists(cache_fn) and not ignore_cache:
             LOGGER.info(f"{cache_fn} is found. Reading from it.")
             features = torch.load(cache_fn, pickle_module=dill)
         else:
@@ -237,8 +241,10 @@ def load_data(
 
             torch.save(features, cache_fn, pickle_module=dill)
         tensor_dataset = processor.create_tensor_data(features)
-        alignments = [f.alignment for f in features]
-        tensor_dataset.alignments = alignments
+        if with_alignments:
+            alignments = [f.alignment for f in features]
+            # Another hack.
+            tensor_dataset.alignments = alignments
         datasets[dataset_type] = tensor_dataset
     return datasets
 

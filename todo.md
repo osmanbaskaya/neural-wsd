@@ -1,10 +1,12 @@
 ### neural-wsd related:
     - osman:
-        - [big] divide the model - pretrained and basic nn
-        - restructuring the project.
+        - [big] predict only the sense of a target word by using *token* embedding.
+        - [big] predict all the sentence by using *token embeddings* with RNN.
+        - logger doesn't fucking work.
+        - [big] create a very small roberta to do basic functionality tets.
+        - Documentation for critical methods.
         - how to save network partially - only the trained weights?
         - loss calc looks wrong.
-        - test WordPieceToTokenList Transformer
         - [big] add some sanity checks that everything works correctly.
         - [big] a general tensorboard integration.
         - splitting data
@@ -16,10 +18,17 @@
         - Word distribution of Wiki - create a dictionary of word and its occurrence. Use whole wikipedia and print a file in a format (word<tab>occurence).
 
 ### done
+- restructuring the project.
+- [big] divide the model - pretrained and basic nn - ``RobertaTokenModel`` added in ``model/transformer_based_models.py``
+- test WordPieceToTokenList Transformer
+- Runner options increased. 
+- Implement all the functionality to use one token (not [CLS]) to do classification.
+- Refactoring for model -> base.py
+- Run the model with the first token - (not the [CLS] token)
+- adding wordpieceToToken transformer
 - improved setup process & pre-commit stuff.
 - add asciification to transformation pipeline.
 - refactoring training
 - change batch size for evaluation.
 - adding validation part.
 - improved run script.
-- adding wordpieceToToken transformer

@@ -72,6 +72,8 @@ class ExperimentBaseModel:
         validation_loader = DataLoader(
             train_dataset, tp["batch_size"] * 2, sampler=validation_sampler
         )
+
+        # Little bit hack. Add alignments to DataLoader if it's provided.
         if hasattr(train_dataset, "alignments"):
             train_alignments_loader = DataLoader(
                 train_dataset.alignments,
@@ -87,6 +89,7 @@ class ExperimentBaseModel:
             )
             train_dataloader.alignment_loader = train_alignments_loader
             validation_loader.alignment_loader = valid_alignments_loader
+
         t_total = self.tparams["max_steps"]
         num_train_epochs = tp["max_steps"] // len(train_dataloader) + 1
 
@@ -162,10 +165,9 @@ class ExperimentBaseModel:
         total_loss = 0
         num_step = 0
         accuracy = 0
-        for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
-            # for num_step, batch in enumerate(data_loader, 1):
-            inputs = self._prepare_batch_input(batch[0])
-            outputs = self.model(**inputs, wordpiece_to_token_list=batch[1])
+        for num_step, batch in enumerate(data_loader, 1):
+            inputs = self._prepare_batch_input(batch)
+            outputs = self.model(**inputs)
             loss, logits = outputs[:2]
             accuracy += self.accuracy(logits, inputs["labels"]).item()
 
@@ -185,10 +187,9 @@ class ExperimentBaseModel:
         self.model.eval()
         total_loss = 0.0
         accuracy = 0
-        for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
-            # for num_step, batch in enumerate(data_loader, 1):
-            inputs = self._prepare_batch_input(batch[0])
-            loss, logits = self.model(**inputs, wordpiece_to_token_list=batch[1])[:2]
+        for num_step, batch in enumerate(data_loader, 1):
+            inputs = self._prepare_batch_input(batch)
+            loss, logits = self.model(**inputs)[:2]
             total_loss += loss.item()
             accuracy += self.accuracy(logits, inputs["labels"]).item()
 
@@ -242,7 +243,7 @@ class PretrainedExperimentModel(ExperimentBaseModel):
         self.processor = processor
         self.num_labels = len(processor.label_encoder.classes_)
         print(self.tparams)
-        print(self.tparams)
+        print(self.hparams)
 
     def get_default_hparams(self):
         return {"max_seq_len": 128}
