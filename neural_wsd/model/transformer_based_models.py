@@ -59,6 +59,7 @@ class TokenEmbedding(nn.Module):
         self.device = self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def forward(self, sequence_output, wordpiece_to_token_list):
+        # TODO remove `assert` this when you have unit test.
         assert len(sequence_output) == len(wordpiece_to_token_list)
 
         batch_size, max_length, hidden_size = sequence_output.shape
@@ -85,10 +86,6 @@ class RobertaTokenModel(PretrainedExperimentModel):
     def _prepare_batch_input(self, batch):
 
         inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
-
-        # XLM and RoBERTa don't use segment_ids
-        if self.base_model_arch in ["bert", "xlnet"]:
-            inputs["token_type_ids"] = batch[2]
 
         if len(batch) == 4:
             inputs["labels"] = batch[3]

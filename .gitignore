@@ -104,3 +104,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+.idea/
+
+# other stuff.
+cache
+logs/
+pip-wheel-metadata/
