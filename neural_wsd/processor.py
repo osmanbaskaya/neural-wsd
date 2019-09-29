@@ -21,6 +21,7 @@ from .text.transformers import WordPieceListTransformer
 from .utils import merge_params
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.disabled = False
 
 
 class InputFeatures(NamedTuple):
@@ -30,7 +31,7 @@ class InputFeatures(NamedTuple):
     input_ids: torch.Tensor
     attention_mask: torch.Tensor = None
     alignment: list = None
-    offset: torch.Tensor = None  # offset of a target word in question of disambiguation.
+    offset: torch.Tensor = 0  # offset of a target word in question of disambiguation.
     label: torch.Tensor = None
 
 
@@ -45,7 +46,6 @@ class ProcessorFactory:
 
 
 class WikiWordSenseDataProcessor:
-
     # TODO remove these params as class param.
     default_hparams = {"tokenizer": {"max_seq_len": 512}, "runner": {"batch_size": 100}}
     default_tparams = {"loader": {"shuffle": False, "num_workers": 1, "batch_size": 2}}
@@ -72,20 +72,20 @@ class WikiWordSenseDataProcessor:
         return self._tparams
 
     @staticmethod
-    def create_examples(examples_dict):
+    def create_examples(feature_dict):
         """General InputFeatures creation. It can handle features with/without alignments/offset
         info."""
 
         features = []
-        keys = examples_dict.keys()
-        flatten_values = zip(*examples_dict.values())
+        keys = feature_dict.keys()
+        flatten_values = zip(*feature_dict.values())
         for v in flatten_values:
             features.append(InputFeatures(**dict(zip(keys, v))))
 
         return features
 
     def process_dataset(self, dataset, *, fit_first=True):
-        transformed = self._process_dataset(dataset, fit_first)
+        transformed, context = self._process_dataset(dataset, fit_first)
         return self.__class__.create_examples(transformed)
 
     def _process_dataset(self, dataset, fit_first=True):
@@ -94,11 +94,11 @@ class WikiWordSenseDataProcessor:
         labels = [e.label for e in dataset]
 
         if fit_first:
-            transformed = self.fit_transform(examples, labels)
+            transformed, context = self.fit_transform(examples, labels)
         else:
-            transformed = self.transform(examples, labels)
+            transformed, context = self.transform(examples, labels)
 
-        return transformed
+        return transformed, context
 
     def fit_transform(self, examples, labels):
         self._label_encoder = LabelEncoder().fit(labels)
@@ -112,9 +112,13 @@ class WikiWordSenseDataProcessor:
         """Basic transformation. It returns only basic elements. Subclasses can add more stuff
         such as offset, or alignment information.
         """
-
         transformed_data, context, labels = self._transform(examples, labels)
-        return {"input_ids": transformed_data, "attention_mask": context["mask"], "label": labels}
+        d = {"input_ids": transformed_data, "attention_mask": context["mask"]}
+
+        if labels is not None:
+            d["label"] = labels
+
+        return d, context
 
     def _transform(self, examples, labels):
         """Basic transformation."""
@@ -198,6 +202,9 @@ class WikiWordSenseDataProcessor:
 
     @staticmethod
     def _create_tensor_features(features):
+        if len(features) == 0:
+            raise ValueError("Features should contain more than 1 element.")
+
         field_types = InputFeatures._field_types
 
         dataset = []
@@ -205,12 +212,13 @@ class WikiWordSenseDataProcessor:
 
         for key, value in field_types.items():
             if issubclass(value, torch.Tensor):
-                dataset.append(
-                    torch.tensor(
-                        [feature.__getattribute__(key) for feature in features], dtype=torch.long
-                    )
-                )
-                data_order.append(key)
+                # Check that the `key` field of InputFeature is defined.
+                # We have to do this check since this method is general. Some InputFeatures may be
+                # None (e.g., alignment, offset). We just # want to skip for those that are None.
+                if features[0].__getattribute__(key) is not None:
+                    data = [feature.__getattribute__(key) for feature in features]
+                    dataset.append(torch.tensor(data, dtype=torch.long))
+                    data_order.append(key)
 
         return TensorDataset(*dataset), data_order
 
@@ -227,22 +235,38 @@ class WikiWordSenseDataProcessor:
 
 class WikiTokenBaseProcessor(WikiWordSenseDataProcessor):
     def _process_dataset(self, dataset, fit_first=True):
-        transformed = super()._process_dataset(dataset, fit_first)
+        transformed, context = super()._process_dataset(dataset, fit_first)
 
         # Add offsets to default processing.
-        transformed["offset"] = [e.offset for e in dataset]
-        return transformed
+        offsets = []
+        miss = longest = 0
+        for i, alignment in enumerate(transformed["alignment"]):
+            offset = dataset[i].offset
+            # check target word is inside of the alignment boundaries.
+            if offset > longest:
+                longest = offset
+            if offset < len(alignment):
+                offsets.append(offset)
+            else:
+                offsets.append(0)  # use the first token to disambiguate.
+                miss += 1
+
+        LOGGER.info(
+            f"For {(miss / len(offsets) * 100):.4}% target words, first token will be used to "
+            f"disambiguate the sense, since max_length is too short to cover those instances."
+        )
+        LOGGER.info(f"Biggest offset is {longest}")
+        transformed["offset"] = offsets
+        return transformed, context
 
     def transform(self, examples, labels=None):
-        transformed_data, context, labels = super()._transform(examples, labels)
-
-        d = {"input_ids": transformed_data, "attention_mask": context["mask"], "label": labels}
+        d, context = super().transform(examples, labels)
 
         # TODO: Is it necessary to check if this key is in the context? It should be, no?
         if "wordpiece_to_token_list" in context:
             d["alignment"] = context["wordpiece_to_token_list"]
 
-        return d
+        return d, context
 
     def create_tensor_data(self, features: InputFeatures):
         tensor_features, order = self.__class__._create_tensor_features(features)

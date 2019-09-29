@@ -198,16 +198,16 @@ class ExperimentBaseModel:
 
         return total_loss, accuracy / len(data_loader)
 
-    def predict(self, sentences):
+    def predict(self, sentences, **kwargs):
         self.model.eval()
-        predictions = self._predict(sentences)
+        predictions = self._predict(sentences, **kwargs)
         return self.processor.inverse_transform_labels(predictions.argmax(axis=1))
 
-    def _predict(self, sentences):
+    def _predict(self, sentences, **kwargs):
         if isinstance(sentences, str):
             sentences = [sentences]
 
-        data = self.processor.transform(sentences)
+        data, _ = self.processor.transform(sentences)
         with torch.no_grad():
             tensor_data = self.processor.create_tensor_data(data, labels_available=False)
             pred_iter = map(

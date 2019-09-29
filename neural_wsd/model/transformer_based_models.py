@@ -84,7 +84,7 @@ class RobertaTokenModel(PretrainedExperimentModel):
 
     def _get_model(self):
         config = self._get_config()
-        classifier = MultiSequential(TokenEmbedding(), RobertaClassificationHead(config))
+        classifier = MultiSequential(TokenEmbedding(), RobertaTokenClassificationHead(config))
         return RobertaBaseModel(config, classifier)
 
     def get_additional_training_params(
@@ -158,17 +158,31 @@ class RobertaTokenModel(PretrainedExperimentModel):
 
         return total_loss, accuracy / len(data_loader)
 
-    def _predict(self, sentences):
+    def _predict(self, sentences, **kwargs):
         if isinstance(sentences, str):
             sentences = [sentences]
 
-        features = self.processor.transform(sentences)
-        wp = [f.alignment for f in features]
+        features, _ = self.processor.transform(sentences)
 
-        tensor_data = self.processor.create_tensor_data(features, labels_available=False)
-        dl = DataLoader(tensor_data, self.tparams["batch_size"] * 2, shuffle=False)
+        # add offset information for prediction. If offset is not provided, the model will use
+        # index 0 (i.e. [CLS]) to predict sense of the token. This may give inaccurate results.
+        if "offset" in kwargs:
+            offsets = kwargs["offset"]
+            if isinstance(offsets, int):
+                offsets = [offsets]
+            features["offset"] = offsets
+
+        features = self.processor.create_examples(features)
+
+        feature_dataset = self.processor.create_tensor_data(features)
+        dl = DataLoader(
+            feature_dataset.tensor_dataset, self.tparams["batch_size"] * 2, shuffle=False
+        )
         alignment_loader = DataLoader(
-            wp, self.tparams["batch_size"] * 2, shuffle=False, collate_fn=lambda t: t
+            feature_dataset.alignments,
+            self.tparams["batch_size"] * 2,
+            shuffle=False,
+            collate_fn=lambda t: t,
         )
 
         tensors = []
@@ -185,3 +199,17 @@ class MultiSequential(nn.Sequential):
         for module in self._modules.values():
             input = module(input, **kwargs)
         return input
+
+
+class RobertaTokenClassificationHead(RobertaClassificationHead):
+    """Head for token-level classification."""
+
+    def forward(self, features, **kwargs):
+        offsets = kwargs["offsets"]
+        x = features[torch.arange(features.size(0)), offsets, :]
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = torch.tanh(x)
+        x = self.dropout(x)
+        x = self.out_proj(x)
+        return x
