@@ -12,9 +12,10 @@ from pytorch_transformers import WarmupLinearSchedule
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from neural_wsd.text.dataset import sample_data
-from neural_wsd.utils import merge_params
-from neural_wsd.utils import total_num_of_params
+from ..text.dataset import FeatureDataset
+from ..text.dataset import sample_data
+from ..utils import merge_params
+from ..utils import total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.disabled = False
@@ -51,12 +52,27 @@ class ExperimentBaseModel:
     def _prepare_batch_input(self, batch):
         raise NotImplementedError()
 
+    def create_dataloaders(self, dataset):
+        train_sampler, validation_sampler = sample_data(dataset, 0.9, shuffle=True)
+        train_dataloader = DataLoader(dataset, self.tparams["batch_size"], sampler=train_sampler)
+        validation_loader = DataLoader(
+            dataset, self.tparams["batch_size"] * 2, sampler=validation_sampler
+        )
+
+        return train_dataloader, validation_loader, train_sampler, validation_sampler
+
+    def get_additional_training_params(
+        self, dataset, train_loader, validation_loader, train_sampler, validation_sampler
+    ):
+        """This function should be overridden in subclasses to customize training."""
+        return {}
+
     @staticmethod
     @abstractmethod
     def get_params_to_optimize(model, weight_decay, optimize_pretrained_model):
         raise NotImplementedError()
 
-    def train(self, train_dataset):
+    def train(self, dataset: FeatureDataset):
         LOGGER.info(f"Training will be on: {self.device}")
 
         tp = self.tparams
@@ -67,31 +83,16 @@ class ExperimentBaseModel:
         total_params = total_num_of_params(self.model.named_parameters())
         LOGGER.info(f"Total number of params for {self.base_model_arch}: {total_params}")
 
-        train_sampler, validation_sampler = sample_data(train_dataset, 0.9, shuffle=True)
-        train_dataloader = DataLoader(train_dataset, tp["batch_size"], sampler=train_sampler)
-        validation_loader = DataLoader(
-            train_dataset, tp["batch_size"] * 2, sampler=validation_sampler
+        train_loader, validation_loader, train_sampler, validation_sampler = self.create_dataloaders(
+            dataset.tensor_dataset
         )
 
-        # Little bit hack. Add alignments to DataLoader if it's provided.
-        if hasattr(train_dataset, "alignments"):
-            train_alignments_loader = DataLoader(
-                train_dataset.alignments,
-                tp["batch_size"],
-                sampler=train_sampler,
-                collate_fn=lambda t: t,
-            )
-            valid_alignments_loader = DataLoader(
-                train_dataset.alignments,
-                tp["batch_size"] * 2,
-                sampler=validation_sampler,
-                collate_fn=lambda t: t,
-            )
-            train_dataloader.alignment_loader = train_alignments_loader
-            validation_loader.alignment_loader = valid_alignments_loader
+        additional_params = self.get_additional_training_params(
+            dataset, train_loader, validation_loader, train_sampler, validation_sampler
+        )
 
         t_total = self.tparams["max_steps"]
-        num_train_epochs = tp["max_steps"] // len(train_dataloader) + 1
+        num_train_epochs = tp["max_steps"] // len(train_loader) + 1
 
         # Prepare optimizer and schedule (linear warmup and decay)
         optimizer_grouped_parameters = self.get_params_to_optimize(
@@ -109,7 +110,7 @@ class ExperimentBaseModel:
         progress = tqdm(total=t_total, desc="Epoch")
         for epoch in range(1, num_train_epochs + 1):
             loss_for_epoch, num_step, accuracy = self._train_loop(
-                train_dataloader, optimizer, scheduler
+                train_loader, optimizer, scheduler=scheduler, **additional_params
             )
 
             LOGGER.info(f"Epoch accuracy: {accuracy}")
@@ -122,7 +123,9 @@ class ExperimentBaseModel:
 
             # TODO Checkpoint logic is missing.
             if epoch % self.tparams["evaluate_every_n_epoch"] == 0:
-                valid_set_loss, validation_accuracy = self._eval_loop(validation_loader)
+                valid_set_loss, validation_accuracy = self._eval_loop(
+                    validation_loader, **additional_params
+                )
                 print(f"Validation Epoch accuracy: {validation_accuracy}")
                 if best_validation_loss > valid_set_loss:
                     LOGGER.info(
@@ -160,7 +163,7 @@ class ExperimentBaseModel:
             optimizer, warmup_steps=self.tparams["warmup_steps"], t_total=t_total
         )
 
-    def _train_loop(self, data_loader, optimizer=None, scheduler=None):
+    def _train_loop(self, data_loader, optimizer, scheduler=None, **kwargs):
         self.model.train()
         total_loss = 0
         num_step = 0
@@ -183,7 +186,7 @@ class ExperimentBaseModel:
 
         return total_loss, num_step, accuracy / len(data_loader)
 
-    def _eval_loop(self, data_loader):
+    def _eval_loop(self, data_loader, **kwargs):
         self.model.eval()
         total_loss = 0.0
         accuracy = 0

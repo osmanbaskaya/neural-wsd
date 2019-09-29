@@ -11,6 +11,7 @@ from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
 
+from .text.dataset import FeatureDataset
 from .text.dataset import WikiWordSenseDisambiguationDataset
 from .text.transformers import BasicTextTransformer
 from .text.transformers import PaddingTransformer
@@ -23,19 +24,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 class InputFeatures(NamedTuple):
-    input_ids: torch.tensor
-    attention_mask: torch.tensor
-    segment_ids: torch.tensor
-    label_id: torch.tensor
+    """Encapsulate all features. If any additional feature is used for any new processor, just
+    add the feature's name, type, and default value."""
 
-
-class TokenInputFeatures(NamedTuple):
-    # Not sure why inheritance ^ doesn't work.
-    input_ids: torch.tensor
-    attention_mask: torch.tensor
-    segment_ids: torch.tensor
-    label_id: torch.tensor
-    alignment: list
+    input_ids: torch.Tensor
+    attention_mask: torch.Tensor = None
+    alignment: list = None
+    offset: torch.Tensor = None  # offset of a target word in question of disambiguation.
+    label: torch.Tensor = None
 
 
 class ProcessorFactory:
@@ -75,36 +71,37 @@ class WikiWordSenseDataProcessor:
     def tparams(self):
         return self._tparams
 
-    def _create_examples(
-        self, transformed_data, attention_masks, labels=None, wordpiece_token=None
-    ):
+    @staticmethod
+    def create_examples(examples_dict):
+        """General InputFeatures creation. It can handle features with/without alignments/offset
+        info."""
+
         features = []
-        if labels is None:
-            labels = cycle([None])
-
-        # TODO add wordpiece_token info here and check how it incorporates with training.
-
-        for input_ids, mask, label in zip(transformed_data, attention_masks, labels):
-            features.append(
-                InputFeatures(
-                    input_ids=input_ids,
-                    attention_mask=mask,
-                    # TODO: hack - check this if it works.
-                    segment_ids=[0] * len(mask),
-                    label_id=label,
-                )
-            )
+        keys = examples_dict.keys()
+        flatten_values = zip(*examples_dict.values())
+        for v in flatten_values:
+            features.append(InputFeatures(**dict(zip(keys, v))))
 
         return features
 
-    def get_examples_and_labels(self, dataset):
-        # TODO; create another class out of this and make this function abstractmethod
-        pass
+    def process_dataset(self, dataset, *, fit_first=True):
+        transformed = self._process_dataset(dataset, fit_first)
+        return self.__class__.create_examples(transformed)
+
+    def _process_dataset(self, dataset, fit_first=True):
+
+        examples = [e.text for e in dataset]
+        labels = [e.label for e in dataset]
+
+        if fit_first:
+            transformed = self.fit_transform(examples, labels)
+        else:
+            transformed = self.transform(examples, labels)
+
+        return transformed
 
     def fit_transform(self, examples, labels):
-
         self._label_encoder = LabelEncoder().fit(labels)
-
         self.data_pipeline = self._get_data_pipeline()
         return self.transform(examples, labels)
 
@@ -112,6 +109,15 @@ class WikiWordSenseDataProcessor:
         return self.fit_transform(examples, labels)
 
     def transform(self, examples, labels=None):
+        """Basic transformation. It returns only basic elements. Subclasses can add more stuff
+        such as offset, or alignment information.
+        """
+
+        transformed_data, context, labels = self._transform(examples, labels)
+        return {"input_ids": transformed_data, "attention_mask": context["mask"], "label": labels}
+
+    def _transform(self, examples, labels):
+        """Basic transformation."""
         if self.data_pipeline is None:
             raise ValueError("You need to fit the data first")
 
@@ -119,8 +125,7 @@ class WikiWordSenseDataProcessor:
             labels = self.transform_labels(labels)
 
         transformed_data, context = self.data_pipeline.fit_transform(examples)
-        attention_masks = context["mask"]
-        return self._create_examples(transformed_data, attention_masks, labels)
+        return transformed_data, context, labels
 
     def transform_labels(self, y):
         if not isinstance(y, list):
@@ -192,97 +197,85 @@ class WikiWordSenseDataProcessor:
         return os.path.exists(os.path.join(cache_dir, cls.cache_fn))
 
     @staticmethod
-    def create_tensor_data(features, labels_available=True):
-        all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-        all_input_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-        all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
+    def _create_tensor_features(features):
+        field_types = InputFeatures._field_types
 
-        dataset = [all_input_ids, all_input_mask, all_segment_ids]
+        dataset = []
+        data_order = []
 
-        # Do not add labels when no labels available (e.g., inference)
-        if labels_available:
-            dataset.append(torch.tensor([f.label_id for f in features], dtype=torch.long))
+        for key, value in field_types.items():
+            if issubclass(value, torch.Tensor):
+                dataset.append(
+                    torch.tensor(
+                        [feature.__getattribute__(key) for feature in features], dtype=torch.long
+                    )
+                )
+                data_order.append(key)
 
-        return TensorDataset(*dataset)
+        return TensorDataset(*dataset), data_order
+
+    def create_tensor_data(self, features: InputFeatures):
+        # TODO: Create a more general version of this. Iterate over all the features and
+        # if there is an attribute, and it's tensor form, then put it into database.
+        # https://stackoverflow.com/questions/6570075/getting-name-of-value-from-namedtuple
+        # as_dict may work. If it works, remove `labels_available` attribute.
+        # If necessary, refactor InputFeatures.
+
+        tensor_features, order = self.__class__._create_tensor_features(features)
+        return FeatureDataset(tensor_features, input_order=order)
 
 
-def load_data(
-    processor,
-    data_dir,
-    cache_dir,
-    cached_data_fn,
-    dataset_types=None,
-    ignore_cache=False,
-    with_alignments=False,
-):
+class WikiTokenBaseProcessor(WikiWordSenseDataProcessor):
+    def _process_dataset(self, dataset, fit_first=True):
+        transformed = super()._process_dataset(dataset, fit_first)
+
+        # Add offsets to default processing.
+        transformed["offset"] = [e.offset for e in dataset]
+        return transformed
+
+    def transform(self, examples, labels=None):
+        transformed_data, context, labels = super()._transform(examples, labels)
+
+        d = {"input_ids": transformed_data, "attention_mask": context["mask"], "label": labels}
+
+        # TODO: Is it necessary to check if this key is in the context? It should be, no?
+        if "wordpiece_to_token_list" in context:
+            d["alignment"] = context["wordpiece_to_token_list"]
+
+        return d
+
+    def create_tensor_data(self, features: InputFeatures):
+        tensor_features, order = self.__class__._create_tensor_features(features)
+        return FeatureDataset(
+            tensor_features=tensor_features,
+            input_order=order,
+            alignments=[f.alignment for f in features],
+        )
+
+
+def load_data(processor, data_dir, cache_dir, dataset_types=None, ignore_cache=False):
     """This method loads preprocessed data if possible. Otherwise, it fetches all the files in
     the directory regarding with dataset_type, runs the pipeline and saves the data.
     """
 
     if dataset_types is None:
-        # dataset_types = ["train", "dev", "test"]
+        # dataset_types = ["train", "test"]
         dataset_types = ["tsv", "ts"]
     datasets = OrderedDict()
     for dataset_type in dataset_types:
-        cache_fn = os.path.join(cache_dir, cached_data_fn)
-        if os.path.exists(cache_fn) and not ignore_cache:
-            LOGGER.info(f"{cache_fn} is found. Reading from it.")
-            features = torch.load(cache_fn, pickle_module=dill)
+        if os.path.exists(cache_dir) and not ignore_cache:
+            LOGGER.info(f"{cache_dir} is found. Reading from it.")
+            feature_dataset = FeatureDataset.load(cache_dir)
         else:
             dataset = WikiWordSenseDisambiguationDataset.from_tsv(data_dir, pattern=dataset_type)
-            examples = [e.text for e in dataset]
-            labels = [e.label for e in dataset]
             if dataset_type == "tsv":
                 # if dataset_type == "train":
-                features = processor.fit_transform(examples, labels)
+                features = processor.process_dataset(dataset, fit_first=True)
                 processor.save(cache_dir)
             else:
-                features = processor.transform(examples, labels)
-
-            torch.save(features, cache_fn, pickle_module=dill)
-        tensor_dataset = processor.create_tensor_data(features)
-        if with_alignments:
-            alignments = [f.alignment for f in features]
-            # Another hack.
-            tensor_dataset.alignments = alignments
-        datasets[dataset_type] = tensor_dataset
+                # This is test/validation data, should not fit.
+                features = processor.process_dataset(dataset, fit_first=False)
+            feature_dataset = processor.create_tensor_data(features)
+            feature_dataset.save(cache_dir)
+        datasets[dataset_type] = feature_dataset
     return datasets
-
-
-class WikiTokenBaseProcessor(WikiWordSenseDataProcessor):
-    def _create_examples(self, transformed_data, attention_masks, labels=None, alignments=None):
-        features = []
-        if labels is None:
-            labels = cycle([None])
-
-        # TODO add wordpiece_token info here and check how it incorporates with training.
-
-        for input_ids, mask, label, alignment in zip(
-            transformed_data, attention_masks, labels, alignments
-        ):
-            features.append(
-                TokenInputFeatures(
-                    input_ids=input_ids,
-                    attention_mask=mask,
-                    # TODO: hack - check this if it works.
-                    segment_ids=[0] * len(mask),
-                    label_id=label,
-                    alignment=alignment,
-                )
-            )
-
-        return features
-
-    def transform(self, examples, labels=None):
-        if self.data_pipeline is None:
-            raise ValueError("You need to fit the data first")
-
-        if labels is not None:
-            labels = self.transform_labels(labels)
-
-        transformed_data, context = self.data_pipeline.fit_transform(examples)
-        attention_masks = context["mask"]
-
-        wordpiece_token = context.get("wordpiece_to_token_list", None)
-
-        return self._create_examples(transformed_data, attention_masks, labels, wordpiece_token)

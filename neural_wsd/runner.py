@@ -37,16 +37,8 @@ def create_model_processor(max_seq_len, base_model, token_based_model, ignore_ca
 
 
 def get_data(processor, token_based_model, ignore_cache):
-    with_alignments = token_based_model
 
-    datasets = load_data(
-        processor,
-        dataset_directory,
-        cache_dir,
-        cached_data_fn,
-        ignore_cache=ignore_cache,
-        with_alignments=with_alignments,
-    )
+    datasets = load_data(processor, dataset_directory, cache_dir, ignore_cache=ignore_cache)
     return datasets
 
 

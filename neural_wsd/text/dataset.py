@@ -1,11 +1,14 @@
+# coding=utf-8
 import csv
 import glob
 import logging
 import math
+import pathlib
 import random
 from abc import abstractmethod
 from typing import NamedTuple
 
+import dill
 import torch.utils.data
 from torch.utils.data.sampler import SubsetRandomSampler
 
@@ -104,3 +107,52 @@ class WikiWordSenseDisambiguationDataset(WordSenseDisambiguationDataset):
             labels.add(e.label)
 
         return examples, labels
+
+
+class FeatureDataset:
+
+    _tensor_fn = "tensor.pkl"
+    _input_order_fn = "input_order.pkl"
+    _alignment_fn = "alignment.pkl"
+
+    def __init__(self, tensor_features, input_order, alignments=None):
+        self._tensor_features = tensor_features
+        self._input_order = input_order
+        self._alignments = alignments
+
+    def save(self, cache_dir):
+        cache_dir = pathlib.Path(cache_dir)
+        torch.save(self._tensor_features, cache_dir / self.__class__._tensor_fn, pickle_module=dill)
+        torch.save(
+            self._input_order, cache_dir / self.__class__._input_order_fn, pickle_module=dill
+        )
+        if self._alignments is not None:
+            torch.save(
+                self._alignments, cache_dir / self.__class__._alignment_fn, pickle_module=dill
+            )
+
+    @classmethod
+    def load(cls, cache_dir):
+        cache_dir = pathlib.Path(cache_dir)
+
+        tensor_dataset = torch.load(cache_dir / cls._tensor_fn, pickle_module=dill)
+        input_order = torch.load(cache_dir / cls._input_order_fn, pickle_module=dill)
+
+        alignments = None
+        alignment_fn = cache_dir / cls._alignment_fn
+        if alignment_fn.exists():
+            alignments = torch.load(alignment_fn, pickle_module=dill)
+
+        return cls(tensor_dataset, input_order, alignments)
+
+    @property
+    def tensor_dataset(self):
+        return self._tensor_features
+
+    @property
+    def alignments(self):
+        return self._alignments
+
+    @property
+    def input_order(self):
+        return self._input_order

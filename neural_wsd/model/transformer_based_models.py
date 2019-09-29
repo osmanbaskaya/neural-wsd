@@ -24,6 +24,7 @@ class RobertaBaseModel(RobertaForSequenceClassification):
         position_ids=None,
         head_mask=None,
         wordpiece_to_token_list=None,
+        offsets=None,
     ):
         outputs = self.roberta(
             input_ids,
@@ -33,7 +34,9 @@ class RobertaBaseModel(RobertaForSequenceClassification):
             head_mask=head_mask,
         )
         sequence_output = outputs[0]
-        logits = self.classifier(sequence_output, wordpiece_to_token_list=wordpiece_to_token_list)
+        logits = self.classifier(
+            sequence_output, wordpiece_to_token_list=wordpiece_to_token_list, offsets=offsets
+        )
 
         outputs = (logits,) + outputs[2:]
         if labels is not None:
@@ -58,7 +61,7 @@ class TokenEmbedding(nn.Module):
         self.weighted_cls_token = weighted_cls_token
         self.device = self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def forward(self, sequence_output, wordpiece_to_token_list):
+    def forward(self, sequence_output, wordpiece_to_token_list, **kwargs):
         # TODO remove `assert` this when you have unit test.
         assert len(sequence_output) == len(wordpiece_to_token_list)
 
@@ -71,6 +74,7 @@ class TokenEmbedding(nn.Module):
         for i in range(batch_size):
             for j, word_piece_indices in enumerate(wordpiece_to_token_list[i]):
                 output[i, j, :] = sequence_output[i, word_piece_indices, :].sum(0)
+
         return output
 
 
@@ -83,21 +87,43 @@ class RobertaTokenModel(PretrainedExperimentModel):
         classifier = MultiSequential(TokenEmbedding(), RobertaClassificationHead(config))
         return RobertaBaseModel(config, classifier)
 
+    def get_additional_training_params(
+        self, dataset, train_loader, validation_loader, train_sampler, validation_sampler
+    ):
+        train_alignments_loader = DataLoader(
+            dataset.alignments,
+            self.tparams["batch_size"],
+            sampler=train_sampler,
+            collate_fn=lambda t: t,
+        )
+        valid_alignments_loader = DataLoader(
+            dataset.alignments,
+            self.tparams["batch_size"] * 2,
+            sampler=validation_sampler,
+            collate_fn=lambda t: t,
+        )
+
+        return {
+            "train_alignments_loader": train_alignments_loader,
+            "validation_alignment_loader": valid_alignments_loader,
+        }
+
     def _prepare_batch_input(self, batch):
 
-        inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
+        inputs = {"input_ids": batch[0], "attention_mask": batch[1], "offsets": batch[2]}
 
         if len(batch) == 4:
             inputs["labels"] = batch[3]
 
         return {k: v.to(self.device) for k, v in inputs.items()}
 
-    def _train_loop(self, data_loader, optimizer=None, scheduler=None):
+    def _train_loop(self, data_loader, optimizer, scheduler=None, **kwargs):
         self.model.train()
+        alignment_loader = kwargs["train_alignments_loader"]
         total_loss = 0
         num_step = 0
         accuracy = 0
-        for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
+        for num_step, batch in enumerate(zip(data_loader, alignment_loader), 1):
             input_batch, wordpiece_batch = batch
             inputs = self._prepare_batch_input(input_batch)
             outputs = self.model(**inputs, wordpiece_to_token_list=wordpiece_batch)
@@ -116,11 +142,13 @@ class RobertaTokenModel(PretrainedExperimentModel):
 
         return total_loss, num_step, accuracy / len(data_loader)
 
-    def _eval_loop(self, data_loader):
+    def _eval_loop(self, data_loader, **kwargs):
         self.model.eval()
         total_loss = 0.0
         accuracy = 0
-        for num_step, batch in enumerate(zip(data_loader, data_loader.alignment_loader), 1):
+
+        alignment_loader = kwargs["validation_alignment_loader"]
+        for num_step, batch in enumerate(zip(data_loader, alignment_loader), 1):
             input_batch, wordpiece_batch = batch
             inputs = self._prepare_batch_input(input_batch)
             outputs = self.model(**inputs, wordpiece_to_token_list=wordpiece_batch)
