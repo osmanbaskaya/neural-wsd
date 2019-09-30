@@ -36,7 +36,7 @@ def create_model_processor(max_seq_len, base_model, token_based_model, ignore_ca
     return processor
 
 
-def get_data(processor, token_based_model, ignore_cache):
+def get_data(processor, ignore_cache):
 
     datasets = load_data(processor, dataset_directory, cache_dir, ignore_cache=ignore_cache)
     return datasets
@@ -52,7 +52,7 @@ def get_model(processor, base_model, tparams, token_based_model):
 
 def run(max_seq_len, base_model, tparams, token_based_model, ignore_cache):
     processor = create_model_processor(max_seq_len, base_model, token_based_model, ignore_cache)
-    datasets = get_data(processor, token_based_model, ignore_cache)
+    datasets = get_data(processor, ignore_cache)
 
     model = get_model(processor, base_model, tparams, token_based_model)
     global_step, training_loss = model.train(datasets["tsv"])
