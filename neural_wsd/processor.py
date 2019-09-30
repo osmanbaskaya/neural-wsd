@@ -21,7 +21,6 @@ from .text.transformers import WordPieceListTransformer
 from .utils import merge_params
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.disabled = False
 
 
 class InputFeatures(NamedTuple):

@@ -1,11 +1,12 @@
 ### neural-wsd related:
     - osman:
+        - some unit tests for token based classification where offset is covered.
         - [big] predict all the sentence by using *token embeddings* with RNN.
-        - logger doesn't fucking work.
         - [big] create a very small roberta to do basic functionality tets.
         - Documentation for critical methods.
         - how to save network partially - only the trained weights?
         - loss calc looks wrong.
+        - checkpoints for the models.
         - [big] add some sanity checks that everything works correctly.
         - [big] a general tensorboard integration.
         - splitting data
@@ -17,6 +18,7 @@
         - Word distribution of Wiki - create a dictionary of word and its occurrence. Use whole wikipedia and print a file in a format (word<tab>occurence).
 
 ### done
+- logger doesn't fucking work.
 - [big] predict only the sense of a target word by using *token* embedding.
 - restructuring the project.
 - [big] divide the model - pretrained and basic nn - ``RobertaTokenModel`` added in ``model/transformer_based_models.py``

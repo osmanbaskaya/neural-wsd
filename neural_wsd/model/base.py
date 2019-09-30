@@ -18,7 +18,6 @@ from ..utils import merge_params
 from ..utils import total_num_of_params
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.disabled = False
 
 
 class ExperimentBaseModel:
@@ -114,7 +113,6 @@ class ExperimentBaseModel:
             )
 
             LOGGER.info(f"Epoch accuracy: {accuracy}")
-            print(f"Epoch accuracy: {accuracy}")
 
             global_step += num_step
             tr_loss += loss_for_epoch
@@ -126,7 +124,7 @@ class ExperimentBaseModel:
                 valid_set_loss, validation_accuracy = self._eval_loop(
                     validation_loader, **additional_params
                 )
-                print(f"Validation Epoch accuracy: {validation_accuracy}")
+                LOGGER.info(f"Validation Epoch accuracy: {validation_accuracy}")
                 if best_validation_loss > valid_set_loss:
                     LOGGER.info(
                         f"Validation loss is decreased from {best_validation_loss} to "
@@ -136,7 +134,7 @@ class ExperimentBaseModel:
                     best_validation_loss = valid_set_loss
                 else:
                     LOGGER.info(
-                        f"Validation loss didn't improved. T best validation loss so far is:"
+                        f"Validation loss didn't improved. The best validation loss so far is:"
                         f" {best_validation_loss} and the last validation loss is: {valid_set_loss}"
                     )
                     patient += 1
@@ -245,11 +243,11 @@ class PretrainedExperimentModel(ExperimentBaseModel):
         self.base_model = base_model
         self.processor = processor
         self.num_labels = len(processor.label_encoder.classes_)
-        print(self.tparams)
-        print(self.hparams)
+        LOGGER.info(f"{self.__class__.__name__} - Model params: {self.hparams}")
+        LOGGER.info(f"{self.__class__.__name__} - Train params: {self.tparams}")
 
     def get_default_hparams(self):
-        return {"max_seq_len": 128}
+        return {}
 
     def get_default_tparams(self):
         return {

@@ -9,7 +9,8 @@ from neural_wsd.model.base import PretrainedExperimentModel
 from neural_wsd.model.transformer_based_models import RobertaTokenModel
 
 configure_logger()
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__file__)
+
 BASE_MODEL = "distilbert-base-uncased"
 
 cache_dir = "cache/exp1"
@@ -31,8 +32,8 @@ def create_model_processor(max_seq_len, base_model, token_based_model, ignore_ca
         base_model=base_model,
         **processor_params,
     )
-    LOGGER.info(f"{processor.hparams}")
-    LOGGER.info(f"{processor.tparams}")
+    LOGGER.info(f"Processor hyperparams: {processor.hparams}")
+    LOGGER.info(f"Processor training params: {processor.tparams}")
     return processor
 
 

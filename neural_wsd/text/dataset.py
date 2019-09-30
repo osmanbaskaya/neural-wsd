@@ -13,7 +13,7 @@ import torch.utils.data
 from torch.utils.data.sampler import SubsetRandomSampler
 
 SEED = 42
-LOGGER = logging.getLogger("__name___")
+LOGGER = logging.getLogger(__name__)
 
 
 def sample_data(dataset, size_of_first_dataset=0.8, shuffle=True, seed=SEED):
@@ -43,7 +43,7 @@ class WordSenseDisambiguationDataset(torch.utils.data.Dataset):
     @classmethod
     def from_tsv(cls, directory, pattern):
         files = glob.glob(f"{directory}/*{pattern}*", recursive=True)
-        LOGGER.info(f"{len(files)} will be read.")
+        LOGGER.info(f"{len(files)} files will be read for {directory} with {pattern}.")
         if len(files) == 0:
             raise ValueError("Check the directory/pattern. no file found.")
         all_lines = cls._read_all_tsv_files(files)
@@ -65,7 +65,7 @@ class WordSenseDisambiguationDataset(torch.utils.data.Dataset):
     def _read_all_tsv_files(files):
         lines = []
         for fn in files:
-            LOGGER.info(fn)
+            LOGGER.debug(f"{fn} is reading.")
             with open(fn, "r", encoding="utf-8") as f:
                 reader = csv.reader(f, delimiter="\t")
                 lines.extend([line for line in reader])

@@ -1,4 +1,6 @@
 # coding=utf-8
+import logging
+
 import torch
 from pytorch_transformers import RobertaForSequenceClassification
 from pytorch_transformers.modeling_roberta import RobertaClassificationHead
@@ -8,6 +10,8 @@ from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 
 from .base import PretrainedExperimentModel
+
+LOGGER = logging.getLogger()
 
 
 class RobertaBaseModel(RobertaForSequenceClassification):

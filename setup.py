@@ -7,7 +7,7 @@ setup(
     package_dir={"": "neural_wsd"},
     author="Osman Baskaya",
     author_email="osmanbaskaya1@gmail.com",
-    version="0.1",
+    version="0.0.1",
     dependency_links=[],
     install_requires=[
         "appdirs",

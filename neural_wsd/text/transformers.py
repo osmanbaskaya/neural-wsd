@@ -1,4 +1,5 @@
 # coding=utf-8
+import logging
 import multiprocessing
 import string
 import unicodedata
@@ -10,6 +11,8 @@ from pytorch_transformers import AutoTokenizer
 from unidecode import unidecode
 
 ALL_LETTERS = string.ascii_letters + " .,;'"
+
+LOGGER = logging.getLogger(__name__)
 
 
 # Turn a Unicode string to plain ASCII, thanks to https://stackoverflow.com/a/518232/2809427
